@@ -1,0 +1,24 @@
+{
+  "settings": {
+    "code_length": 4,
+    "code_validity": 300,
+    "max_attempts": 3
+  },
+  "current_code": {
+    "value": "0548",
+    "generated_at": "2025-04-15T10:05:50.759260",
+    "valid_until": "2025-04-15T10:10:50.759260",
+    "used": false,
+    "used_for_entry": false
+  },
+  "access_logs": [],
+  "alerts": [],
+  "agents": {
+    "default": {
+      "name": "Technicien",
+      "permissions": [
+        "basic_access"
+      ]
+    }
+  }
+}

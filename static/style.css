@@ -1,0 +1,76 @@
+/* Styles pour SmartCadenas */
+
+/* Style pour le code d'accès */
+.code-display {
+    font-family: monospace;
+    font-size: 2.5rem;
+    letter-spacing: 0.5rem;
+    font-weight: bold;
+    color: #0d6efd;
+    text-shadow: 0 0 5px rgba(13, 110, 253, 0.2);
+    padding: 0.5rem;
+    background-color: #f8f9fa;
+    border-radius: 0.5rem;
+    display: inline-block;
+    min-width: 200px;
+}
+
+/* Styles pour les entrées de log */
+.log-entry {
+    border-left: 4px solid #dee2e6;
+    transition: background-color 0.2s;
+}
+
+.log-entry:hover {
+    background-color: #f8f9fa;
+}
+
+.log-entry.success {
+    border-left-color: #198754;
+}
+
+.log-entry.failed {
+    border-left-color: #dc3545;
+}
+
+/* Styles pour les alertes */
+.alert-item {
+    transition: background-color 0.3s;
+    border-left: 4px solid #dc3545;
+}
+
+.alert-item:hover {
+    background-color: #f8f9fa;
+}
+
+.resolve-btn {
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.resolve-btn:hover {
+    opacity: 1;
+}
+
+/* Styles pour l'actualisation des données */
+@keyframes highlight {
+    0% {
+        background-color: rgba(255, 243, 205, 0);
+    }
+    50% {
+        background-color: rgba(255, 243, 205, 1);
+    }
+    100% {
+        background-color: rgba(255, 243, 205, 0);
+    }
+}
+
+.highlight-update {
+    animation: highlight 2s ease;
+}
+
+/* Style pour compte à rebours */
+#time-left {
+    font-size: 0.9rem;
+    font-weight: normal;
+}
