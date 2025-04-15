@@ -4,11 +4,13 @@ Permet de vérifier le bon fonctionnement des endpoints principaux
 """
 
 import requests
+import json
+import time
+from datetime import datetime
 
 # Configuration
 BASE_URL = "http://localhost:5000/api"
 TEST_AGENT = "test_agent"
-
 
 def test_generate_code():
     """Teste la génération d'un nouveau code"""
@@ -25,7 +27,6 @@ def test_generate_code():
         print(f"❌ Échec de génération du code: {response.status_code}")
         print(response.text)
         return None
-
 
 def test_verify_code(code):
     """Teste la vérification d'un code valide"""
