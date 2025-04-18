@@ -8,14 +8,15 @@ Fonctionnalités clés :
 - Gestion des alertes de sécurité
 """
 
-import json
-import os
-import random
-from datetime import datetime, timedelta
+import json     # Lire/écrire des fichiers JSON (comme une mini base de données)
+import os       # Lire des variables d’environnement comme CODE_LENGTH
+import random   # Générer des chiffres aléatoires pour les codes OTP
+from datetime import datetime, timedelta    # Gérer les dates d’expiration des codes
+from typing import Dict, Any, Optional      # Donner des types précis à tes fonctions (Doc + sécurité)
 
-from dotenv import load_dotenv
-from flask import Flask, request, render_template
-from flask_restful import Api, Resource
+from dotenv import load_dotenv              # Charger les variables de ton fichier .env
+from flask import Flask, request, render_template, jsonify
+from flask_restful import Api, Resource     #  Outils pour faire des APIs REST facilement avec Flask
 
 # Initialisation
 load_dotenv()
@@ -24,13 +25,12 @@ api = Api(app)
 
 # Configuration
 DATA_FILE = 'codes.json'
-# Configuration
 CODE_LENGTH = int(os.getenv("CODE_LENGTH", "4").strip())  # 4 chiffres par défaut
 MAX_ATTEMPTS = int(os.getenv("MAX_ATTEMPTS", "3").strip())  # 3 tentatives max
 CODE_VALIDITY = int(os.getenv("CODE_VALIDITY", "300").strip())  # 5 minutes par défaut
 
 
-def load_data():
+def load_data() -> Dict[str, Any]:
     """Charge les données depuis le fichier JSON avec structure de secours"""
     try:
         with open(DATA_FILE, 'r') as f:
@@ -40,7 +40,7 @@ def load_data():
             if 'settings' not in data:
                 data['settings'] = {
                     'code_length': CODE_LENGTH,
-                    'code_validity': int(os.getenv("CODE_VALIDITY", 300)),
+                    'code_validity': int(os.getenv("CODE_VALIDITY", "300")),
                     'max_attempts': MAX_ATTEMPTS
                 }
             return data
@@ -49,7 +49,7 @@ def load_data():
         return {
             "settings": {
                 "code_length": CODE_LENGTH,
-                "code_validity": int(os.getenv("CODE_VALIDITY", 300)),
+                "code_validity": int(os.getenv("CODE_VALIDITY", "300")),
                 "max_attempts": MAX_ATTEMPTS
             },
             "current_code": None,
@@ -64,7 +64,7 @@ def load_data():
         }
 
 
-def save_data(data):
+def save_data(data: Dict[str, Any]) -> None:
     """Sauvegarde les données avec indentation pour lisibilité"""
     with open(DATA_FILE, 'w') as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
@@ -95,6 +95,7 @@ class CodeResource(Resource):
             "remaining_time": self._get_remaining_time(current_code)
         }, 200
 
+
     def post(self):
         """Génère un nouveau code OTP avec période de validité"""
         data = load_data()
@@ -122,7 +123,8 @@ class CodeResource(Resource):
             "valid_until": valid_until.isoformat()
         }, 201
 
-    def _get_remaining_time(self, code_data):
+    @staticmethod
+    def _get_remaining_time(code_data: Optional[Dict[str, Any]]) -> int:
         """Calcule le temps restant avant expiration en secondes"""
         if not code_data or not code_data.get("valid_until"):
             return 0
@@ -204,11 +206,12 @@ class AccessResource(Resource):
                 "message": f"Tentative échouée avec le code {req_data.get('code')}",
                 "from_request": False
             }
-            AlertResource().post(alert_payload=alert_payload, existing_data=data)
+            AlertResource().post(alert_data=alert_payload, existing_data=data)
 
         return {"status": "logged", "event_status": status}, 201
 
-    def _verify_code(self, code, data):
+    @staticmethod
+    def _verify_code(code: str, data: Dict[str, Any]) -> bool:
         """Vérifie la validité du code selon les règles métier"""
         current_code = data.get("current_code")
         if not current_code or not code:
@@ -256,7 +259,7 @@ def get_logs():
     """Récupère les logs avec pagination"""
     data = load_data()
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = request.args.get('per_page', 10, type=int)  # Réduit à 10 pour meilleure expérience utilisateur
 
     # Trier les logs par date (plus récent en premier)
     sorted_logs = sorted(data.get("access_logs", []),
@@ -268,7 +271,7 @@ def get_logs():
     start = (page - 1) * per_page
     end = min(start + per_page, total)
 
-    return {
+    return jsonify({
         "logs": sorted_logs[start:end],
         "pagination": {
             "total": total,
@@ -276,7 +279,7 @@ def get_logs():
             "per_page": per_page,
             "pages": (total + per_page - 1) // per_page
         }
-    }, 200
+    })
 
 
 @app.route('/api/alerts')
@@ -284,7 +287,7 @@ def get_alerts():
     """Récupère les alertes avec pagination"""
     data = load_data()
     page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
+    per_page = request.args.get('per_page', 10, type=int)  # Réduit à 10 pour meilleure expérience utilisateur
     show_resolved = request.args.get('show_resolved', 'false').lower() == 'true'
 
     # Filtrer les alertes en fonction du paramètre show_resolved
@@ -300,7 +303,7 @@ def get_alerts():
     start = (page - 1) * per_page
     end = min(start + per_page, total)
 
-    return {
+    return jsonify({
         "alerts": sorted_alerts[start:end],
         "pagination": {
             "total": total,
@@ -308,7 +311,7 @@ def get_alerts():
             "per_page": per_page,
             "pages": (total + per_page - 1) // per_page
         }
-    }, 200
+    })
 
 
 # Enregistrement des endpoints
@@ -319,13 +322,13 @@ api.add_resource(AlertResource, '/api/alert')
 
 # Filtre personnalisé pour les templates
 @app.template_filter('datetimeformat')
-def datetimeformat(value, format='%Y-%m-%d %H:%M:%S'):
+def datetimeformat(value, format_str='%Y-%m-%d %H:%M:%S'):
     if isinstance(value, str):
         try:
             value = datetime.fromisoformat(value)
         except ValueError:
             return value
-    return value.strftime(format)
+    return value.strftime(format_str)
 
 
 # Route du dashboard
@@ -333,22 +336,50 @@ def datetimeformat(value, format='%Y-%m-%d %H:%M:%S'):
 def dashboard():
     data = load_data()
 
-    # Gestion des logs
+    # Gestion des logs avec pagination
+    page = request.args.get('logs_page', 1, type=int)
+    per_page = 10
     logs = data.get("access_logs", [])
+
     try:
-        sorted_logs = sorted(logs, key=lambda x: x.get('timestamp', ''), reverse=True)[:50]
+        sorted_logs = sorted(logs, key=lambda x: x.get('timestamp', ''), reverse=True)
+        total_logs = len(sorted_logs)
+        start = (page - 1) * per_page
+        end = min(start + per_page, total_logs)
+        paginated_logs = sorted_logs[start:end]
+        total_pages_logs = (total_logs + per_page - 1) // per_page
     except Exception as e:
-        print(f"Erreur de tri des logs: {e}")
-        sorted_logs = logs[:50]
+        print(f"Erreur de pagination des logs: {e}")
+        paginated_logs = logs[:per_page]
+        total_logs = len(logs)
+        total_pages_logs = 1
 
-    # Filtrage des alertes non résolues
-    alerts = [a for a in data.get("alerts", []) if not a.get("resolved", False)][:10]
+    # Gestion des alertes avec pagination
+    alerts_page = request.args.get('alerts_page', 1, type=int)
+    alerts_per_page = 5
+    alerts = [a for a in data.get("alerts", []) if not a.get("resolved", False)]
 
-    return render_template('index.html',
+    total_alerts = len(alerts)
+    alerts_start = (alerts_page - 1) * alerts_per_page
+    alerts_end = min(alerts_start + alerts_per_page, total_alerts)
+    sorted_alerts = sorted(alerts, key=lambda x: x.get('timestamp', ''), reverse=True)
+    paginated_alerts = sorted_alerts[alerts_start:alerts_end]
+    total_pages_alerts = (total_alerts + alerts_per_page - 1) // alerts_per_page
+
+    return render_template('dashboard.html',
                            current_code=data.get("current_code"),
-                           logs=sorted_logs,
-                           alerts=alerts,
-                           now=datetime.now())  # Ajout de la variable now
+                           logs=paginated_logs,
+                           total_logs=total_logs,
+                           logs_page=page,
+                           logs_pages=total_pages_logs,
+                           alerts=paginated_alerts,
+                           total_alerts=total_alerts,
+                           alerts_page=alerts_page,
+                           alerts_pages=total_pages_alerts,
+                           now=datetime.now(),
+                           max=max,
+                           min=min
+    )
 
 
 # Route pour marquer une alerte comme résolue
@@ -359,11 +390,11 @@ def resolve_alert(alert_index):
     if 0 <= alert_index < len(data["alerts"]):
         data["alerts"][alert_index]["resolved"] = True
         save_data(data)
-        return {"status": "alert_resolved"}, 200
+        return jsonify({"status": "alert_resolved"}), 200
 
-    return {"error": "Alert not found"}, 404
+    return jsonify({"error": "Alert not found"}), 404
 
 
 if __name__ == '__main__':
-    port = int(os.getenv("API_PORT", 5000))
+    port = int(os.getenv("API_PORT", "5000"))
     app.run(host=os.getenv("API_HOST", "0.0.0.0"), port=port, debug=True)

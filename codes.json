@@ -5,9 +5,9 @@
     "max_attempts": 3
   },
   "current_code": {
-    "value": "4617",
-    "generated_at": "2025-04-15T10:20:52.542868",
-    "valid_until": "2025-04-15T10:25:52.542868",
+    "value": "4620",
+    "generated_at": "2025-04-18T12:08:33.838456",
+    "valid_until": "2025-04-18T12:13:33.838456",
     "used": false,
     "used_for_entry": false
   },
