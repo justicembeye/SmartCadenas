@@ -2,244 +2,273 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SmartCadenas - Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="/static/style.css" rel="stylesheet">
 </head>
 <body>
-<div class="container py-4">
-    <header class="d-flex justify-content-between align-items-center mb-4">
-        <h1>🔐 SmartCadenas</h1>
-        <div class="text-muted">Dernière mise à jour: <span id="update-time">{{ now|datetimeformat('%H:%M:%S') }}</span>
-            <button id="refresh-btn" class="btn btn-sm btn-outline-secondary ms-2">
-                <i class="bi bi-arrow-clockwise"></i>
-            </button>
+<div class="dashboard-container">
+    <!-- Header minimaliste -->
+    <header class="dashboard-header">
+        <div class="header-content">
+            <div class="logo-container">
+                <i class="bi bi-shield-lock"></i>
+                <h1>Smart<span>Cadenas</span></h1>
+            </div>
+            <div class="header-info">
+                <div class="system-status">
+                    <span class="status-indicator active"></span>
+                    <span>Système opérationnel</span>
+                </div>
+                <div class="last-update">
+                    <span>Actualisé à <strong id="update-time">{{ now|datetimeformat('%H:%M:%S') }}</strong></span>
+                    <button id="refresh-btn" class="btn btn-icon">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </div>
+            </div>
         </div>
     </header>
 
-    <!-- Carte Code -->
-    <div class="card mb-4">
-        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">Code d'Accès</h5>
-            <span id="time-left"></span>
-        </div>
-        <div class="card-body">
-            {% if current_code and current_code.value and not current_code.used %}
-            <div class="text-center mb-3">
-                <div class="code-display mb-2">{{ current_code.value }}</div>
-                <p>
-                    <span class="badge bg-{% if current_code.used %}danger{% else %}success{% endif %}">
-                        {% if current_code.used %}INVALIDÉ{% else %}ACTIF{% endif %}
-                    </span>
-                    <span class="badge bg-info">
-                        Valide jusqu'à {{ current_code.valid_until|datetimeformat('%H:%M:%S') }}
-                    </span>
-                    {% if current_code.used_for_entry %}
-                    <span class="badge bg-warning">En utilisation</span>
-                    {% endif %}
-                </p>
-            </div>
-            {% else %}
-            <div class="alert alert-warning">Aucun code actif</div>
-            {% endif %}
-
-            <button class="btn btn-success w-100" id="generate-btn">
-                <i class="bi bi-key-fill me-2"></i>Générer un Nouveau Code
-            </button>
-        </div>
-    </div>
-
-    <!-- Historique et Alertes -->
-    <div class="row">
-        <div class="col-md-7">
-            <div class="card">
-                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Historique des Accès</h5>
-                    <span class="badge bg-light text-dark" id="logs-counter">{{ total_logs }} événements</span>
+    <!-- Contenu principal réorganisé -->
+    <main class="dashboard-main">
+        <!-- Colonne gauche - Cartes fixes -->
+        <div class="left-column">
+            <!-- Carte Code d'accès (hauteur fixe) -->
+            <div class="card access-card">
+                <div class="card-header">
+                    <h2><i class="bi bi-key"></i> Code d'accès</h2>
+                    <span class="badge time-badge" id="time-left"></span>
                 </div>
-                <div class="card-body p-0">
-                    <div class="list-group list-group-flush" id="logs-container">
-                        {% if not logs %}
-                        <div class="list-group-item text-center text-muted py-3">Aucun événement enregistré</div>
-                        {% endif %}
+                <div class="card-body">
+                    {% if current_code and current_code.value and not current_code.used %}
+                        <div class="code-section">
+                            <div class="code-display">{{ current_code.value }}</div>
+                            <div class="code-meta">
+                            <span class="meta-item validity">
+                                <i class="bi bi-clock"></i>
+                                <span>Valide jusqu'à {{ current_code.valid_until|datetimeformat('%H:%M:%S') }}</span>
+                            </span>
+                                <span class="meta-item status {{ 'used' if current_code.used else 'active' }}">
+                                {{ 'INVALIDÉ' if current_code.used else 'ACTIF' }}
+                            </span>
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="no-code">
+                            <i class="bi bi-key"></i>
+                            <p>Aucun code actif</p>
+                        </div>
+                    {% endif %}
+                    <button class="btn btn-generate" id="generate-btn">
+                        <i class="bi bi-plus-circle"></i> Générer un code
+                    </button>
+                </div>
+            </div>
 
+            <!-- Carte Sécurité (hauteur fixe) -->
+            <div class="card security-card">
+                <div class="card-header">
+                    <h2><i class="bi bi-shield-check"></i> Sécurité</h2>
+                </div>
+                <div class="card-body">
+                    <div class="security-metric">
+                        <h3>Tentatives échouées</h3>
+                        <div class="attempts-display">
+                            <span class="current-attempts">{{ failed_attempts_count }}</span>
+                            <span class="separator">/</span>
+                            <span class="max-attempts">{{ max_attempts }}</span>
+                        </div>
+                        <div class="progress-container">
+                            <div class="progress">
+                                <div class="progress-bar bg-{{ security_level }}"
+                                     style="width: {{ progress_percentage }}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="security-status">
+                        <span class="status-label">Niveau de sécurité:</span>
+                        <span class="status-value {{ security_level }}">
+                            {% if security_level == 'success' %}Élevé
+                            {% elif security_level == 'warning' %}Moyen
+                            {% else %}Critique{% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Colonne droite - Cartes scrollables -->
+        <div class="right-column">
+            <!-- Carte Historique (hauteur flexible) -->
+            <div class="card history-card">
+                <div class="card-header">
+                    <h2><i class="bi bi-list-check"></i> Historique des accès</h2>
+                    <span class="badge counter-badge">{{ total_logs }} événements</span>
+                </div>
+                <div class="card-body">
+                    {% if not logs %}
+                        <div class="empty-state">
+                            <i class="bi bi-journal"></i>
+                            <p>Aucun événement enregistré</p>
+                        </div>
+                    {% else %}
+                        <div class="log-entries">
                         {% for log in logs %}
-                        <div class="list-group-item log-entry {{ log.status }}">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <strong>
+                            <div class="log-entry {{ log.status }}">
+                                <div class="log-icon">
                                     {% if log.event == "door_open" %}
                                     {% if log.status == "success" %}
-                                    <i class="bi bi-unlock text-success"></i> Ouverture
+                                        <i class="bi bi-door-open success"></i>
                                     {% else %}
-                                    <i class="bi bi-x-circle text-danger"></i> Tentative échouée
+                                        <i class="bi bi-door-closed danger"></i>
                                     {% endif %}
                                     {% elif log.event == "door_close" %}
-                                    <i class="bi bi-lock"></i> Fermeture
+                                        <i class="bi bi-door-closed primary"></i>
                                     {% else %}
-                                    <i class="bi bi-activity"></i> {{ log.event }}
+                                        <i class="bi bi-activity warning"></i>
                                     {% endif %}
-                                </strong>
-                                <small class="text-muted">{{ log.timestamp|datetimeformat('%H:%M:%S') }}</small>
                             </div>
-                            <div class="d-flex justify-content-between align-items-center mt-1">
-                                <small class="text-muted">Agent: {{ log.agent }}</small>
-                                {% if log.code_used %}
-                                <code>{{ log.code_used }}</code>
+                                <div class="log-details">
+                                    <div class="log-main">
+                                    <span class="log-event">
+                                        {% if log.event == "door_open" %}
+                                            {{ 'Ouverture' if log.status == "success" else 'Tentative échouée' }}
+                                        {% elif log.event == "door_close" %}
+                                            Fermeture
+                                        {% else %}
+                                            {{ log.event }}
+                                        {% endif %}
+                                    </span>
+                                        <span class="log-time">{{ log.timestamp|datetimeformat('%H:%M:%S') }}</span>
+                                    </div>
+                                    <div class="log-secondary">
+                                        <span class="log-agent"><i class="bi bi-person"></i> {{ log.agent }}</span>
+                                        {% if log.code_used %}
+                                            <span class="log-code"><i class="bi bi-123"></i> {{ log.code_used }}</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if log.reason %}
+                                        <div class="log-reason">
+                                            <i class="bi bi-info-circle"></i> {{ log.reason|replace('_', ' ')|capitalize }}
+                                        </div>
                                 {% endif %}
                             </div>
                         </div>
                         {% endfor %}
                     </div>
+                    {% endif %}
 
-                    <!-- Pagination pour les logs -->
-                    <div class="pagination-container p-2 d-flex justify-content-center">
-                        <nav aria-label="Navigation des logs">
-                            <ul class="pagination pagination-sm mb-0">
-                                <!-- Première page -->
+                    {% if logs_pages > 1 %}
+                        <nav class="pagination-container">
+                            <ul class="pagination">
                                 <li class="page-item {% if logs_page == 1 %}disabled{% endif %}">
                                     <a class="page-link" href="?logs_page=1&alerts_page={{ alerts_page }}"
                                        aria-label="Première">
-                                        <span aria-hidden="true">&laquo;&laquo;</span>
+                                        <i class="bi bi-chevron-double-left"></i>
                                     </a>
                                 </li>
-
-                                <!-- Page précédente -->
-                                <li class="page-item {% if logs_page == 1 %}disabled{% endif %}">
-                                    <a class="page-link"
-                                       href="?logs_page={{ logs_page - 1 }}&alerts_page={{ alerts_page }}"
-                                       aria-label="Précédente">
-                                        <span aria-hidden="true">&laquo;</span>
-                                    </a>
-                                </li>
-
-                                <!-- Pages numérotées -->
                                 {% for i in range(max(1, logs_page - 2), min(logs_pages + 1, logs_page + 3)) %}
                                     <li class="page-item {% if i == logs_page %}active{% endif %}">
                                         <a class="page-link"
                                            href="?logs_page={{ i }}&alerts_page={{ alerts_page }}">{{ i }}</a>
                                     </li>
                                 {% endfor %}
-
-                                <!-- Page suivante -->
                                 <li class="page-item {% if logs_page >= logs_pages %}disabled{% endif %}">
                                     <a class="page-link"
                                        href="?logs_page={{ logs_page + 1 }}&alerts_page={{ alerts_page }}"
                                        aria-label="Suivante">
-                                        <span aria-hidden="true">&raquo;</span>
-                                    </a>
-                                </li>
-
-                                <!-- Dernière page -->
-                                <li class="page-item {% if logs_page >= logs_pages %}disabled{% endif %}">
-                                    <a class="page-link"
-                                       href="?logs_page={{ logs_pages }}&alerts_page={{ alerts_page }}"
-                                       aria-label="Dernière">
-                                        <span aria-hidden="true">&raquo;&raquo;</span>
+                                        <i class="bi bi-chevron-right"></i>
                                     </a>
                                 </li>
                             </ul>
                         </nav>
-                    </div>
+                    {% endif %}
                 </div>
             </div>
-        </div>
 
-        <div class="col-md-5">
-            <div class="card">
-                <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Alertes</h5>
-                    <span class="badge bg-light text-dark" id="alerts-counter">{{ total_alerts }} non résolues</span>
+            <!-- Carte Alertes (positionnée en haut à droite) -->
+            <div class="card alerts-card">
+                <div class="card-header">
+                    <h2><i class="bi bi-exclamation-triangle"></i> Alertes</h2>
+                    <span class="badge counter-badge alert">{{ total_alerts }} non résolues</span>
                 </div>
-                <div class="card-body p-0">
-                    <div class="list-group list-group-flush" id="alerts-container">
-                        {% if not alerts %}
-                        <div class="list-group-item text-center text-muted py-3">Aucune alerte active</div>
-                        {% endif %}
-
+                <div class="card-body">
+                    {% if not alerts %}
+                        <div class="empty-state">
+                            <i class="bi bi-check-circle"></i>
+                            <p>Aucune alerte active</p>
+                        </div>
+                    {% else %}
+                        <div class="alert-entries">
                         {% for alert in alerts %}
-                            <div class="list-group-item alert-item"
+                            <div class="alert-entry severity-{{ alert.severity }}"
                                  data-alert-index="{{ alert._index if alert._index is defined else loop.index0 }}">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <strong class="text-danger">
-                                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
-                                    {{ alert.type | replace('_', ' ') | capitalize }}
-                                </strong>
-                                <div>
-                                    <span class="badge bg-{{ 'danger' if alert.severity == 'high' else 'warning' }}">
-                                        {{ alert.severity | capitalize }}
-                                    </span>
-                                    <button class="btn btn-sm btn-outline-success ms-1 resolve-btn"
+                                <div class="alert-icon">
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                </div>
+                                <div class="alert-content">
+                                    <div class="alert-header">
+                                        <span class="alert-title">{{ alert.type | replace('_', ' ') | capitalize }}</span>
+                                        <span class="alert-severity">{{ alert.severity | capitalize }}</span>
+                                    </div>
+                                    <p class="alert-message">{{ alert.message }}</p>
+                                    <div class="alert-footer">
+                                        <span class="alert-time">{{ alert.timestamp|datetimeformat('%H:%M:%S') }}</span>
+                                        <button class="btn btn-resolve resolve-btn"
                                             data-alert-index="{{ alert._index if alert._index is defined else loop.index0 }}">
-                                        <i class="bi bi-check"></i>
+                                            <i class="bi bi-check-lg"></i>
                                     </button>
                                 </div>
-                            </div>
-                            <p class="mb-1 mt-1">{{ alert.message }}</p>
-                            <div class="text-end">
-                                <small class="text-muted">{{ alert.timestamp|datetimeformat('%H:%M:%S') }}</small>
                             </div>
                         </div>
                         {% endfor %}
                     </div>
+                    {% endif %}
 
-                    <!-- Pagination pour les alertes -->
-                    <div class="pagination-container p-2 d-flex justify-content-center">
-                        <nav aria-label="Navigation des alertes">
-                            <ul class="pagination pagination-sm mb-0">
-                                <!-- Première page -->
+                    {% if alerts_pages > 1 %}
+                        <nav class="pagination-container">
+                            <ul class="pagination">
                                 <li class="page-item {% if alerts_page == 1 %}disabled{% endif %}">
                                     <a class="page-link" href="?logs_page={{ logs_page }}&alerts_page=1"
                                        aria-label="Première">
-                                        <span aria-hidden="true">&laquo;&laquo;</span>
+                                        <i class="bi bi-chevron-double-left"></i>
                                     </a>
                                 </li>
-
-                                <!-- Page précédente -->
-                                <li class="page-item {% if alerts_page == 1 %}disabled{% endif %}">
-                                    <a class="page-link"
-                                       href="?logs_page={{ logs_page }}&alerts_page={{ alerts_page - 1 }}"
-                                       aria-label="Précédente">
-                                        <span aria-hidden="true">&laquo;</span>
-                                    </a>
-                                </li>
-
-                                <!-- Pages numérotées -->
                                 {% for i in range(max(1, alerts_page - 2), min(alerts_pages + 1, alerts_page + 3)) %}
                                     <li class="page-item {% if i == alerts_page %}active{% endif %}">
                                         <a class="page-link"
                                            href="?logs_page={{ logs_page }}&alerts_page={{ i }}">{{ i }}</a>
                                     </li>
                                 {% endfor %}
-
-                                <!-- Page suivante -->
                                 <li class="page-item {% if alerts_page >= alerts_pages %}disabled{% endif %}">
                                     <a class="page-link"
                                        href="?logs_page={{ logs_page }}&alerts_page={{ alerts_page + 1 }}"
                                        aria-label="Suivante">
-                                        <span aria-hidden="true">&raquo;</span>
-                                    </a>
-                                </li>
-
-                                <!-- Dernière page -->
-                                <li class="page-item {% if alerts_page >= alerts_pages %}disabled{% endif %}">
-                                    <a class="page-link"
-                                       href="?logs_page={{ logs_page }}&alerts_page={{ alerts_pages }}"
-                                       aria-label="Dernière">
-                                        <span aria-hidden="true">&raquo;&raquo;</span>
+                                        <i class="bi bi-chevron-right"></i>
                                     </a>
                                 </li>
                             </ul>
                         </nav>
-                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
-    </div>
+    </main>
+
+    <!-- Footer minimal -->
+    <footer class="dashboard-footer">
+        <div class="footer-content">
+            <span class="version">SmartCadenas v1.0</span>
+            <span class="copyright">© Justice MBG UNIPG 2025</span>
+            <span class="server-time" id="current-time">{{ now|datetimeformat('%d/%m/%Y %H:%M:%S') }}</span>
+        </div>
+    </footer>
 </div>
 
-<!-- Bootstrap Bundle avec Popper -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="/static/script.js"></script>
 </body>
