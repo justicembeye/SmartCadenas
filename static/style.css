@@ -642,68 +642,48 @@
 
 /* Footer */
 .dashboard-footer {
-    padding: var(--spacing-md) 0;
+    padding: 1rem 0;
     margin-top: auto;
     border-top: 1px solid var(--gray-light);
+    background: var(--light);
 }
 
 .footer-content {
     display: flex;
-    justify-content: space-between;
-    font-size: 0.85rem;
-    color: var(--gray);
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: 1800px;
+    margin: 0 auto;
+    padding: 0 var(--spacing-md);
+    text-align: center;
 }
 
 .copyright {
     color: var(--gray);
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
+    font-size: 0.75rem;
+    order: 2;
 }
 
-/* Styles des alertes révisés */
-.alerts-card {
-    height: auto;
-    min-height: 300px;
-    display: flex;
-    flex-direction: column;
+.version {
+    order: 1;
 }
 
-.alert-entries {
-    flex: 1;
-    overflow-y: auto;
-    padding-right: var(--spacing-sm);
-    max-height: 60vh;
+.server-time {
+    order: 3;
+    font-size: 0.7rem;
 }
 
-/* Animation améliorée pour la résolution des alertes */
-.alert-entry {
-    transition: all 0.3s ease;
-}
-
-/* Responsive pour les alertes */
-@media (max-width: 768px) {
-    .alerts-card {
-        min-height: auto;
-        max-height: none;
+@media (min-width: 768px) {
+    .footer-content {
+        flex-direction: row;
+        justify-content: space-between;
+        text-align: left;
     }
-
-    .alert-entries {
-        max-height: 50vh;
-    }
-
-    .alert-entry {
-        flex-direction: column;
-    }
-
-    .alert-footer {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 0.5rem;
-    }
-
-    .btn-resolve {
-        align-self: flex-end;
+    .copyright {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
     }
 }
 
@@ -803,4 +783,27 @@
 
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(0, 0, 0, 0.3);
+}
+
+/* === DEBUT STYLE CODE EXPIRÉ === */
+.expired-code {
+    color: #ff3e3e;
+    border: 2px dashed #ff3e3e;
+    background: linear-gradient(135deg, #fff0f0 0%, #ffe0e0 100%);
+}
+
+.meta-item.status.expired {
+    color: #ff3e3e;
+    background-color: rgba(255, 62, 62, 0.1);
+}
+/* === FIN STYLE CODE EXPIRÉ === */
+
+/* === ANIMATION RAFRAICHISSEMENT === */
+@keyframes refresh-pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.8; }
+    100% { opacity: 1; }
+}
+.refreshing {
+    animation: refresh-pulse 1s ease;
 }

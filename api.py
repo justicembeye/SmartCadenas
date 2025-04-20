@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Tuple, Union
 
 from dotenv import load_dotenv
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 from flask_restful import Api, Resource
 
@@ -186,14 +186,23 @@ def is_code_valid(code_data: Dict[str, Any]) -> bool:
     """
     if not code_data or not code_data.get("valid_until"):
         return False
-
     try:
         valid_until = datetime.fromisoformat(code_data["valid_until"])
-        return datetime.now() < valid_until and not code_data.get("used", False)
-    except (ValueError, TypeError) as e:
-        logger.error(f"Erreur lors de la validation du code: {str(e)}")
+        return datetime.now() < valid_until
+    except ValueError:
         return False
 
+
+# === DEBUT ENDPOINT STATE ===
+@app.route('/api/state')
+def get_state():
+    data = load_data()
+    return jsonify({
+        'current_code': data.get('current_code'),
+        'access_logs': data.get('access_logs')[-10:],  # 10 derniers logs
+        'alerts': [a for a in data.get('alerts', []) if not a.get('resolved')]
+    })
+# === FIN ENDPOINT STATE ===
 
 def create_security_alert(
         storage: Dict[str, Any],
@@ -282,7 +291,7 @@ def increment_failed_attempt(storage: Dict[str, Any]) -> int:
 
 # Filtres de template
 @app.template_filter('datetimeformat')
-def datetimeformat(value: Union[str, datetime], fmt: str = '%Y-%m-%d %H:%M:%S') -> str:
+def datetimeformat(value: Union[str, datetime], fmt: str = '%d/%m/%Y %H:%M:%S') -> str:
     """Formate une date pour l'affichage.
 
     Args:
@@ -294,13 +303,11 @@ def datetimeformat(value: Union[str, datetime], fmt: str = '%Y-%m-%d %H:%M:%S') 
     """
     if not value:
         return ""
-
     if isinstance(value, str):
         try:
             value = datetime.fromisoformat(value)
-        except (ValueError, TypeError):
+        except ValueError:
             return value
-
     return value.strftime(fmt)
 
 
@@ -360,6 +367,7 @@ def dashboard() -> Union[str, Tuple[str, int]]:
 
         return render_template(
             'dashboard.html',
+            is_code_valid=is_code_valid,
             now=datetime.now(),
             current_code=data.get("current_code"),
             logs=logs_to_show,

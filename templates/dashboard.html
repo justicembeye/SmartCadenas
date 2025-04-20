@@ -46,16 +46,25 @@
                 <div class="card-body">
                     {% if current_code and current_code.value and not current_code.used %}
                         <div class="code-section">
-                            <div class="code-display">{{ current_code.value }}</div>
-                            <div class="code-meta">
-                            <span class="meta-item validity">
-                                <i class="bi bi-clock"></i>
-                                <span>Valide jusqu'à {{ current_code.valid_until|datetimeformat('%H:%M:%S') }}</span>
-                            </span>
-                                <span class="meta-item status {{ 'used' if current_code.used else 'active' }}">
-                                {{ 'INVALIDÉ' if current_code.used else 'ACTIF' }}
-                            </span>
-                            </div>
+                            {% if current_code and current_code.value %}
+                                <div class="code-display {% if not is_code_valid(current_code) %}expired-code{% endif %}">
+                                    {{ current_code.value }}
+                                </div>
+                                <div class="code-meta">
+                                    <span class="meta-item validity">
+                                        <i class="bi bi-clock"></i>
+                                        <span>Valide jusqu'à {{ current_code.valid_until|datetimeformat('%H:%M:%S') }}</span>
+                                    </span>
+                                    <span class="meta-item status {% if not is_code_valid(current_code) %}expired{% else %}active{% endif %}">
+                                        {{ 'EXPIRÉ' if not is_code_valid(current_code) else 'ACTIF' }}
+                                    </span>
+                                </div>
+                            {% else %}
+                                <div class="no-code">
+                                    <i class="bi bi-key"></i>
+                                    <p>Aucun code actif</p>
+                                </div>
+                            {% endif %}
                         </div>
                     {% else %}
                         <div class="no-code">
@@ -143,7 +152,7 @@
                                             {{ log.event }}
                                         {% endif %}
                                     </span>
-                                        <span class="log-time">{{ log.timestamp|datetimeformat('%H:%M:%S') }}</span>
+                                        <span class="log-time">{{ log.timestamp|datetimeformat('%d/%m/%Y %H:%M:%S') }}</span>
                                     </div>
                                     <div class="log-secondary">
                                         <span class="log-agent"><i class="bi bi-person"></i> {{ log.agent }}</span>
@@ -217,7 +226,7 @@
                                     </div>
                                     <p class="alert-message">{{ alert.message }}</p>
                                     <div class="alert-footer">
-                                        <span class="alert-time">{{ alert.timestamp|datetimeformat('%H:%M:%S') }}</span>
+                                        <span class="alert-time">{{ alert.timestamp|datetimeformat('%d/%m/%Y %H:%M:%S') }}</span>
                                         <button class="btn btn-resolve resolve-btn"
                                             data-alert-index="{{ alert._index if alert._index is defined else loop.index0 }}">
                                             <i class="bi bi-check-lg"></i>
@@ -263,7 +272,7 @@
     <footer class="dashboard-footer">
         <div class="footer-content">
             <span class="version">SmartCadenas v1.0</span>
-            <span class="copyright">© Justice MBG UNIPG 2025</span>
+            <span class="copyright">© lozio UNIPG 2025</span>
             <span class="server-time" id="current-time">{{ now|datetimeformat('%d/%m/%Y %H:%M:%S') }}</span>
         </div>
     </footer>

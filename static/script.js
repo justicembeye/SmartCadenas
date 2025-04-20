@@ -3,524 +3,68 @@
  * Gère le rafraîchissement des données, les interactions utilisateur et les animations
  */
 
-// Constantes et configuration
-const REFRESH_INTERVAL = 10000; // Intervalle de rafraîchissement en ms
-const API_TIMEOUT = 5000; // Timeout pour les requêtes API en ms
-const MAX_RETRIES = 3; // Nombre maximal de tentatives en cas d'échec
+// Configuration globale
+const CONFIG = {
+    refreshInterval: 10000,    // Intervalle de rafraîchissement en ms
+    apiTimeout: 5000,          // Timeout pour les requêtes API en ms
+    maxRetries: 3,             // Nombre maximal de tentatives en cas d'échec
+    minRefreshDelay: 2000      // Délai minimum entre les rafraîchissements manuels
+};
 
 // État global
-let refreshTimer = null;
-let isRefreshing = false;
-let currentCode = null;
-let connectionProblem = false;
-let refreshCount = 0;
-let lastRefreshTime = Date.now();
+const state = {
+    refreshTimer: null,
+    isRefreshing: false,
+    currentCode: null,
+    connectionProblem: false,
+    refreshCount: 0,
+    lastRefreshTime: Date.now(),
+    autoRefreshEnabled: true,
+    apiFailCount: 0
+};
 
-// Fonction au chargement de la page
-document.addEventListener('DOMContentLoaded', function () {
-    // Initialiser les gestionnaires d'événements
+// Sélecteurs DOM fréquemment utilisés
+const DOM = {
+    get refreshBtn() { return document.getElementById('refresh-btn'); },
+    get generateBtn() { return document.getElementById('generate-btn'); },
+    get dashboardContainer() { return document.querySelector('.dashboard-container'); },
+    get codeElement() { return document.querySelector('.code-display'); },
+    get statusElement() { return document.querySelector('.meta-item.status'); },
+    get timeLeftDisplay() { return document.getElementById('time-left'); },
+    get validUntilElement() { return document.querySelector('.meta-item.validity span:last-child'); },
+    get updateTimeElement() { return document.getElementById('update-time'); },
+    get logEntries() { return document.querySelector('.log-entries'); },
+    get alertEntries() { return document.querySelector('.alert-entries'); },
+    get alertCounter() { return document.querySelector('.badge.counter-badge.alert'); }
+};
+
+/**
+ * Initialisation de l'application
+ */
+document.addEventListener('DOMContentLoaded', () => {
     setupEventHandlers();
-
-    // Démarrer le compte à rebours si un code est actif
+    addCustomStyles();
     updateRemainingTime();
-
-    // Démarrer le rafraîchissement automatique
     startAutoRefresh();
-
-    // Log dans la console pour aider au débogage
+    handleFooterLayout();
     console.log("SmartCadenas Dashboard initialisé");
 });
 
-/**
- * Initialise tous les gestionnaires d'événements
- */
+// Gestion des événements
 function setupEventHandlers() {
-    // Bouton de rafraîchissement manuel
-    const refreshBtn = document.getElementById('refresh-btn');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', manualRefresh);
-    }
+    if (DOM.refreshBtn) DOM.refreshBtn.addEventListener('click', manualRefresh);
+    if (DOM.generateBtn) DOM.generateBtn.addEventListener('click', generateNewCode);
 
-    // Bouton de génération de code
-    const generateBtn = document.getElementById('generate-btn');
-    if (generateBtn) {
-        generateBtn.addEventListener('click', generateNewCode);
-    }
-
-    // Boutons de résolution d'alertes
-    const resolveBtns = document.querySelectorAll('.resolve-btn');
-    if (resolveBtns.length > 0) {
-        setupResolveButtons(resolveBtns);
-    }
-}
-
-/**
- * Rafraîchissement manuel avec animation et protection anti-spam
- */
-function manualRefresh() {
-    const refreshBtn = document.getElementById('refresh-btn');
-    if (!refreshBtn) return;
-
-    // Protection contre les clics rapides
-    const now = Date.now();
-    if (now - lastRefreshTime < 2000) {
-        showNotification('Merci de patienter avant de rafraîchir à nouveau', 'warning');
-        return;
-    }
-
-    lastRefreshTime = now;
-
-    // Effet visuel
-    refreshBtn.classList.add('rotating');
-    refreshBtn.disabled = true;
-
-    // Mettre à jour l'heure affichée
-    updateLastRefreshTime();
-
-    // Rafraîchir la page après un court délai
-    setTimeout(() => {
-        location.reload();
-    }, 500);
-}
-
-/**
- * Génère un nouveau code d'accès via l'API
- */
-async function generateNewCode() {
-    const generateBtn = document.getElementById('generate-btn');
-    if (!generateBtn) return;
-
-    try {
-        // Désactiver le bouton pour éviter les clics multiples
-        generateBtn.disabled = true;
-        generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Génération...';
-
-        // Délai pour éviter les clics trop rapides
-        await new Promise(resolve => setTimeout(resolve, 300));
-
-        const response = await fetch('/api/code', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
-            credentials: 'same-origin',
-            timeout: API_TIMEOUT
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-
-            // Vérifier les données reçues
-            if (!data.code) {
-                throw new Error('Réponse invalide du serveur');
-            }
-
-            // Afficher notification
-            const validTime = new Date(data.valid_until).toLocaleTimeString();
-            showNotification(`Nouveau code généré: ${sanitizeHTML(data.code)}\nValide jusqu'à ${sanitizeHTML(validTime)}`);
-
-            // Rafraîchir après un délai
-            setTimeout(() => {
-                location.reload();
-            }, 1500);
-        } else {
-            // Gérer les erreurs
-            let errorMsg = 'Impossible de générer le code';
-            try {
-                const error = await response.json();
-                errorMsg = error.error || errorMsg;
-            } catch (e) {
-                console.error('Erreur lors de la lecture de la réponse:', e);
-            }
-
-            showNotification('Erreur: ' + errorMsg, 'error');
-            generateBtn.disabled = false;
-            generateBtn.innerHTML = '<i class="bi bi-key-fill me-2"></i>Réessayer';
-        }
-    } catch (error) {
-        console.error('Erreur:', error);
-        showNotification('Erreur de connexion au serveur', 'error');
-        generateBtn.disabled = false;
-        generateBtn.innerHTML = '<i class="bi bi-key-fill me-2"></i>Réessayer';
-    }
-}
-
-/**
- * Fonction helper pour les requêtes avec réessai automatique
- */
-async function fetchWithRetry(url, options, retries = 3) {
-    try {
-        const response = await fetch(url, {
-            ...options,
-            timeout: API_TIMEOUT
-        });
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return response;
-    } catch (error) {
-        if (retries <= 1) throw error;
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return fetchWithRetry(url, options, retries - 1);
-    }
-}
-
-/**
- * Configure les boutons de résolution d'alertes - Version améliorée
- */
-function setupResolveButtons(buttons) {
-    const resolveInProgress = new Set();
-
-    buttons.forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            e.preventDefault();
-            const alertIndex = btn.dataset.alertIndex;
-            const alertItem = btn.closest('.alert-entry');
-
-            if (!alertItem || resolveInProgress.has(alertIndex)) return;
-
-            resolveInProgress.add(alertIndex);
-            btn.disabled = true;
-            const originalHtml = btn.innerHTML;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-
-            try {
-                const response = await fetch(`/api/alert/${alertIndex}/resolve`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    },
-                    credentials: 'same-origin'
-                });
-
-                if (response.ok) {
-                    // Animation de disparition
-                    alertItem.style.transition = 'all 0.3s ease';
-                    alertItem.style.opacity = '0';
-                    alertItem.style.height = `${alertItem.offsetHeight}px`;
-
-                    setTimeout(() => {
-                        alertItem.style.height = '0';
-                        alertItem.style.margin = '0';
-                        alertItem.style.padding = '0';
-                        alertItem.style.border = 'none';
-
-                        setTimeout(() => {
-                            alertItem.remove();
-                            updateAlertCounter();
-                            checkEmptyAlerts();
-                        }, 300);
-                    }, 200);
-                } else {
-                    const error = await response.json();
-                    throw new Error(error.message || 'Échec de la résolution');
-                }
-            } catch (error) {
-                console.error('Erreur:', error);
-                showNotification(error.message || 'Erreur lors de la résolution', 'error');
-                btn.innerHTML = originalHtml;
-            } finally {
-                btn.disabled = false;
-                resolveInProgress.delete(alertIndex);
-            }
-        });
+    // Gestionnaires délégués pour les éléments dynamiques
+    document.addEventListener('click', e => {
+        if (e.target.closest('.resolve-btn')) handleResolveAlert(e.target.closest('.resolve-btn'));
     });
 }
 
 /**
- * Helper: Animation de suppression d'alerte
+ * Styles CSS personnalisés
  */
-function animateAlertRemoval(alertItem, container) {
-    alertItem.style.height = `${alertItem.offsetHeight}px`;
-    alertItem.style.opacity = '1';
-
-    requestAnimationFrame(() => {
-        alertItem.style.transition = 'all 0.3s ease';
-        alertItem.style.opacity = '0';
-        alertItem.style.height = '0';
-        alertItem.style.margin = '0';
-        alertItem.style.padding = '0';
-        alertItem.style.border = 'none';
-
-        setTimeout(() => {
-            alertItem.remove();
-            updateAlertCounter();
-            checkEmptyAlerts();
-            adjustContainerHeight(container);
-        }, 300);
-    });
-}
-
-/**
- * Helper: Ajuste la hauteur du conteneur après suppression
- */
-function adjustContainerHeight(container) {
-    requestAnimationFrame(() => {
-        container.style.height = 'auto';
-    });
-}
-
-/**
- * Helper: Réinitialise le bouton après erreur
- */
-function resetButton(btn) {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-check-lg"></i>';
-}
-
-/**
- * Anime la suppression d'une alerte résolue
- */
-function animateAlertResolution(alertIndex) {
-    const alertItem = document.querySelector(`.alert-item[data-alert-index="${alertIndex}"]`);
-    if (!alertItem) return;
-
-    // Animation en deux temps
-    alertItem.style.opacity = '0.5';
-    alertItem.style.height = alertItem.offsetHeight + 'px';
-
-    setTimeout(() => {
-        alertItem.style.height = '0';
-        alertItem.style.padding = '0';
-        alertItem.style.margin = '0';
-        alertItem.style.overflow = 'hidden';
-
-        setTimeout(() => {
-            alertItem.remove();
-
-            // Mise à jour du compteur d'alertes
-            updateAlertCounter();
-
-            // Afficher message si plus d'alertes
-            checkEmptyAlerts();
-        }, 300);
-    }, 200);
-}
-
-/**
- * Met à jour le compteur d'alertes
- */
-function updateAlertCounter() {
-    const alertCounter = document.getElementById('alerts-counter');
-    if (!alertCounter) return;
-
-    const remainingAlerts = document.querySelectorAll('.alert-item').length;
-    alertCounter.textContent = `${remainingAlerts} non résolue${remainingAlerts !== 1 ? 's' : ''}`;
-}
-
-/**
- * Vérifie s'il reste des alertes
- */
-function checkEmptyAlerts() {
-    const alertContainer = document.getElementById('alerts-container');
-    if (!alertContainer) return;
-
-    if (alertContainer.querySelectorAll('.alert-item').length === 0) {
-        alertContainer.innerHTML = '<div class="list-group-item text-center text-muted py-3">Aucune alerte active</div>';
-    }
-}
-
-/**
- * Protection contre les attaques XSS
- */
-function sanitizeHTML(str) {
-    if (!str) return '';
-    const temp = document.createElement('div');
-    temp.textContent = str;
-    return temp.innerHTML;
-}
-
-/**
- * Affiche une notification avec animation
- */
-function showNotification(message, type = 'success') {
-    // Nettoyer le message pour éviter les injections XSS
-    message = sanitizeHTML(message);
-
-    // Créer la notification
-    const notification = document.createElement('div');
-    notification.className = `toast align-items-center text-white bg-${type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'danger'} position-fixed bottom-0 end-0 m-3`;
-    notification.setAttribute('role', 'alert');
-    notification.setAttribute('aria-live', 'assertive');
-    notification.setAttribute('aria-atomic', 'true');
-
-    notification.innerHTML = `
-        <div class="d-flex">
-            <div class="toast-body">
-                ${message.replace(/\n/g, '<br>')}
-            </div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-        </div>
-    `;
-
-    document.body.appendChild(notification);
-
-    // Afficher puis supprimer après 3 secondes
-    setTimeout(() => {
-        notification.classList.add('show');
-        setTimeout(() => {
-            notification.classList.remove('show');
-            setTimeout(() => {
-                notification.remove();
-            }, 500);
-        }, 3000);
-    }, 100);
-}
-
-/**
- * Met à jour le temps restant pour le code actuel
- */
-function updateRemainingTime() {
-    const timeLeftDisplay = document.getElementById('time-left');
-    if (!timeLeftDisplay) return;
-
-    const codeElement = document.querySelector('.code-display');
-    if (!codeElement) return;
-
-    const validUntilElement = document.querySelector('.badge.bg-info');
-    if (!validUntilElement) return;
-
-    try {
-        // Extraire l'heure de validité
-        const timeText = validUntilElement.textContent;
-        const timeString = timeText.replace('Valide jusqu\'à ', '').trim();
-
-        // Vérifier le format de date
-        let validUntil;
-        const now = new Date();
-
-        if (timeString.includes('-')) {
-            // Format date complète (YYYY-MM-DD HH:MM:SS)
-            validUntil = new Date(timeString);
-            if (isNaN(validUntil.getTime())) {
-                throw new Error('Format de date invalide');
-            }
-        } else {
-            // Format heure seulement (HH:MM:SS) - utiliser la date du jour
-            const [hours, minutes, seconds] = timeString.split(':').map(Number);
-            if (isNaN(hours) || isNaN(minutes) || isNaN(seconds)) {
-                throw new Error('Format d\'heure invalide');
-            }
-
-            validUntil = new Date();
-            validUntil.setHours(hours, minutes, seconds);
-
-            // Si la date est déjà dépassée, le code a expiré
-            if (validUntil < now) {
-                timeLeftDisplay.textContent = 'Expiré';
-                timeLeftDisplay.className = 'badge bg-danger';
-                return;
-            }
-        }
-
-        const diffInSeconds = Math.floor((validUntil - now) / 1000);
-
-        // Affichage du temps restant
-        if (diffInSeconds <= 0) {
-            timeLeftDisplay.textContent = 'Expiré';
-            timeLeftDisplay.className = 'badge bg-danger';
-        } else {
-            const mins = Math.floor(diffInSeconds / 60);
-            const secs = diffInSeconds % 60;
-            timeLeftDisplay.textContent = `${mins}:${secs.toString().padStart(2, '0')} restants`;
-            timeLeftDisplay.className = 'badge bg-light text-dark';
-
-            // Alerte si moins de 60 secondes
-            if (diffInSeconds < 60) {
-                timeLeftDisplay.className = 'badge bg-warning text-dark';
-            }
-        }
-    } catch (error) {
-        console.error('Erreur dans updateRemainingTime:', error);
-        timeLeftDisplay.textContent = 'Format invalide';
-        timeLeftDisplay.className = 'badge bg-secondary';
-    }
-}
-
-/**
- * Met à jour l'heure de dernier rafraîchissement
- */
-function updateLastRefreshTime() {
-    const updateTimeElement = document.getElementById('update-time');
-    if (updateTimeElement) {
-        updateTimeElement.textContent = new Date().toLocaleTimeString();
-    }
-}
-
-/**
- * Démarre le rafraîchissement automatique de la page
- */
-function startAutoRefresh() {
-    // Mettre à jour le temps restant toutes les secondes
-    setInterval(updateRemainingTime, 1000);
-
-    // Rafraîchir la page automatiquement
-    refreshTimer = setInterval(() => {
-        const codeDisplay = document.querySelector('.code-display');
-        // Ne rafraîchir que si un code est affiché
-        if (codeDisplay) {
-            refreshCount++;
-            if (refreshCount >= 3) { // Rafraîchir toutes les 3 périodes
-                location.reload();
-                refreshCount = 0;
-            }
-        }
-    }, REFRESH_INTERVAL);
-
-    // Mettre à jour l'heure dans le header toutes les 60 secondes
-    setInterval(updateLastRefreshTime, 60000);
-
-    // Vérifier périodiquement l'état de l'API
-    checkApiStatus();
-    setInterval(checkApiStatus, 30000);
-}
-
-/**
- * Vérifie l'état de l'API
- */
-let apiFailCount = 0;
-
-function checkApiStatus() {
-    fetch('/api/code', {
-        method: 'GET',
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin',
-        timeout: API_TIMEOUT
-    })
-        .then(response => {
-            if (response.ok) {
-                apiFailCount = 0; // Réinitialiser en cas de succès
-
-                // Si une connexion était perdue, informer qu'elle est rétablie
-                if (connectionProblem) {
-                    showNotification('Connexion au serveur rétablie', 'success');
-                    connectionProblem = false;
-                }
-            } else {
-                apiFailCount++;
-                handleApiFailure();
-            }
-        })
-        .catch(error => {
-            apiFailCount++;
-            handleApiFailure();
-        });
-}
-
-/**
- * Gère les échecs de communication avec l'API
- */
-function handleApiFailure() {
-    if (apiFailCount >= 3 && !connectionProblem) {
-        showNotification('Problème de connexion avec le serveur. Essayez de rafraîchir la page.', 'error');
-        connectionProblem = true;
-    }
-}
-
-// Ajouter styles pour l'animation de rotation
-(function addRotationStyles() {
+function addCustomStyles() {
     const style = document.createElement('style');
     style.textContent = `
         @keyframes rotating {
@@ -530,6 +74,500 @@ function handleApiFailure() {
         .rotating {
             animation: rotating 1s linear infinite;
         }
+        .dashboard-container.refreshing {
+            opacity: 0.9;
+            transition: opacity 0.3s ease;
+        }
+        .code-display.expired-code {
+            color: var(--danger);
+            border-color: var(--danger);
+        }
+        .meta-item.status.expired {
+            background-color: rgba(255, 0, 110, 0.1);
+            color: var(--danger);
+        }
     `;
     document.head.appendChild(style);
-})();
+}
+
+// Rafraîchissement manuel
+async function manualRefresh() {
+    if (!DOM.refreshBtn) return;
+
+    const now = Date.now();
+    if (now - state.lastRefreshTime < CONFIG.minRefreshDelay) {
+        showNotification('Merci de patienter avant de rafraîchir à nouveau', 'warning');
+        return;
+    }
+
+    state.lastRefreshTime = now;
+    DOM.refreshBtn.classList.add('rotating');
+    DOM.refreshBtn.disabled = true;
+
+    try {
+        await refreshDashboard(true);
+    } catch {
+        setTimeout(() => window.location.reload(), 500);
+    } finally {
+        DOM.refreshBtn.classList.remove('rotating');
+        DOM.refreshBtn.disabled = false;
+    }
+}
+
+// Génération de code
+async function generateNewCode() {
+    if (!DOM.generateBtn) return;
+
+    try {
+        DOM.generateBtn.disabled = true;
+        DOM.generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Génération...';
+
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        const response = await fetch('/api/code', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            credentials: 'same-origin'
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            if (!data.code) throw new Error('Réponse invalide du serveur');
+
+            const validTime = new Date(data.valid_until).toLocaleTimeString();
+            showNotification(`Nouveau code généré: ${sanitizeHTML(data.code)}\nValide jusqu'à ${sanitizeHTML(validTime)}`);
+
+            setTimeout(async () => {
+                await refreshDashboard(true);
+                resetGenerateButton();
+            }, 1000);
+        } else {
+            throw await handleApiError(response);
+        }
+    } catch (error) {
+        console.error('Erreur:', error);
+        showNotification(error.message || 'Erreur de connexion au serveur', 'error');
+        resetGenerateButton(true);
+    }
+}
+
+// Rafraîchissement du dashboard
+async function refreshDashboard(forceRefresh = false) {
+    if (!state.autoRefreshEnabled || (state.isRefreshing && !forceRefresh)) return false;
+
+    state.isRefreshing = true;
+    if (DOM.dashboardContainer) DOM.dashboardContainer.classList.add('refreshing');
+
+    try {
+        const [codeData, logsData, alertsData] = await Promise.all([
+            fetchData('/api/code'),
+            fetchData('/api/logs'),
+            fetchData('/api/alerts')
+        ]);
+
+        updateCodeDisplay(codeData);
+        if (logsData) updateLogs(logsData.logs);
+        if (alertsData) updateAlerts(alertsData.alerts);
+
+        updateLastRefreshTime();
+        state.apiFailCount = 0;
+        if (state.connectionProblem) {
+            showNotification('Connexion au serveur rétablie', 'success');
+            state.connectionProblem = false;
+        }
+
+        return true;
+    } catch (error) {
+        console.error('Refresh failed:', error);
+        state.apiFailCount++;
+        handleApiFailure();
+        return false;
+    } finally {
+        state.isRefreshing = false;
+        if (DOM.dashboardContainer) {
+            setTimeout(() => DOM.dashboardContainer.classList.remove('refreshing'), 300);
+        }
+    }
+}
+
+// Mise à jour de l'affichage
+function updateCodeDisplay(data) {
+    if (!DOM.codeElement || !DOM.statusElement) return;
+
+    const code = data?.current_code;
+    if (!code?.value) return;
+
+    const isValid = isCodeValid(code);
+
+    DOM.codeElement.textContent = code.value;
+    DOM.codeElement.classList.toggle('expired-code', !isValid);
+
+    DOM.statusElement.classList.remove('active', 'used');
+    DOM.statusElement.classList.toggle('expired', !isValid);
+    DOM.statusElement.textContent = isValid ? 'ACTIF' : 'EXPIRÉ';
+
+    updateRemainingTime();
+}
+
+function updateLogs(logs) {
+    if (!DOM.logEntries || !logs || !Array.isArray(logs)) return;
+    if (document.querySelector('.pagination')) return;
+
+    if (logs.length === 0) {
+        DOM.logEntries.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-journal"></i>
+                <p>Aucun événement enregistré</p>
+            </div>
+        `;
+        return;
+    }
+
+    DOM.logEntries.innerHTML = logs.slice(0, 10).map(log => `
+        <div class="log-entry ${log.status || ''}">
+            <div class="log-icon">${getLogIcon(log)}</div>
+            <div class="log-details">
+                <div class="log-main">
+                    <span class="log-event">${getLogEventText(log)}</span>
+                    <span class="log-time">${formatTimestamp(log.timestamp)}</span>
+                </div>
+                <div class="log-secondary">
+                    <span class="log-agent"><i class="bi bi-person"></i> ${log.agent || 'Inconnu'}</span>
+                    ${log.code_used ? `<span class="log-code"><i class="bi bi-123"></i> ${log.code_used}</span>` : ''}
+                </div>
+                ${log.reason ? `
+                    <div class="log-reason">
+                        <i class="bi bi-info-circle"></i> ${formatReason(log.reason)}
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+function updateAlerts(alerts) {
+    if (!DOM.alertEntries || !alerts) return;
+    if (document.querySelector('.pagination')) return;
+
+    if (DOM.alertCounter) {
+        DOM.alertCounter.textContent = `${alerts.length} non résolue${alerts.length !== 1 ? 's' : ''}`;
+    }
+
+    if (alerts.length === 0) {
+        DOM.alertEntries.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-check-circle"></i>
+                <p>Aucune alerte active</p>
+            </div>
+        `;
+        return;
+    }
+
+    DOM.alertEntries.innerHTML = alerts.map((alert, index) => `
+        <div class="alert-entry severity-${alert.severity}" data-alert-index="${alert._index || index}">
+            <div class="alert-icon">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+            </div>
+            <div class="alert-content">
+                <div class="alert-header">
+                    <span class="alert-title">${formatAlertType(alert.type)}</span>
+                    <span class="alert-severity">${alert.severity.charAt(0).toUpperCase() + alert.severity.slice(1)}</span>
+                </div>
+                <p class="alert-message">${alert.message}</p>
+                <div class="alert-footer">
+                    <span class="alert-time">${formatTimestamp(alert.timestamp)}</span>
+                    <button class="btn btn-resolve resolve-btn" data-alert-index="${alert._index || index}">
+                        <i class="bi bi-check-lg"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Gestion des alertes
+async function handleResolveAlert(button) {
+    const alertIndex = button.dataset.alertIndex;
+    const alertItem = button.closest('.alert-entry');
+    if (!alertItem) return;
+
+    button.disabled = true;
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    try {
+        const response = await fetch(`/api/alert/${alertIndex}/resolve`, {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            credentials: 'same-origin'
+        });
+
+        if (!response.ok) throw await handleApiError(response);
+
+        animateAlertRemoval(alertItem);
+        updateAlertCounter();
+        checkEmptyAlerts();
+    } catch (error) {
+        console.error('Erreur:', error);
+        showNotification(error.message || 'Erreur lors de la résolution', 'error');
+        button.innerHTML = originalHtml;
+        button.disabled = false;
+    }
+}
+
+function animateAlertRemoval(alertItem) {
+    alertItem.style.transition = 'all 0.3s ease';
+    alertItem.style.opacity = '0';
+    alertItem.style.height = `${alertItem.offsetHeight}px`;
+
+    setTimeout(() => {
+        alertItem.style.height = '0';
+        alertItem.style.margin = '0';
+        alertItem.style.padding = '0';
+        alertItem.style.border = 'none';
+
+        setTimeout(() => alertItem.remove(), 300);
+    }, 200);
+}
+
+function updateAlertCounter() {
+    if (!DOM.alertCounter) return;
+    const remainingAlerts = document.querySelectorAll('.alert-entry').length;
+    DOM.alertCounter.textContent = `${remainingAlerts} non résolue${remainingAlerts !== 1 ? 's' : ''}`;
+}
+
+function checkEmptyAlerts() {
+    if (!DOM.alertEntries) return;
+    if (DOM.alertEntries.querySelectorAll('.alert-entry').length === 0) {
+        DOM.alertEntries.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-check-circle"></i>
+                <p>Aucune alerte active</p>
+            </div>
+        `;
+    }
+}
+
+// Utilitaires
+function getRequestHeaders() {
+    return {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+    };
+}
+
+async function fetchData(endpoint) {
+    const response = await fetch(endpoint, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin'
+    });
+    if (!response.ok) throw new Error(`Erreur HTTP: ${response.status}`);
+    return await response.json();
+}
+
+async function handleApiError(response) {
+    try {
+        const error = await response.json();
+        return new Error(error.error || 'Échec de la requête API');
+    } catch {
+        return new Error('Erreur lors de la lecture de la réponse');
+    }
+}
+
+function isCodeValid(code) {
+    if (!code?.valid_until) return false;
+    try {
+        return new Date(code.valid_until) > new Date();
+    } catch (e) {
+        console.error('Erreur lors de la vérification du code:', e);
+        return false;
+    }
+}
+
+function updateRemainingTime() {
+    if (!DOM.timeLeftDisplay || !DOM.codeElement || !DOM.validUntilElement) return;
+
+    try {
+        const timeText = DOM.validUntilElement.textContent.replace('Valide jusqu\'à ', '').trim();
+        const now = new Date();
+        let validUntil;
+
+        if (timeText.includes('/')) {
+            const [datePart, timePart] = timeText.split(' ');
+            const [day, month, year] = datePart.split('/').map(Number);
+            const [hours, minutes, seconds] = timePart.split(':').map(Number);
+            validUntil = new Date(year, month - 1, day, hours, minutes, seconds);
+        } else if (timeText.includes('-')) {
+            validUntil = new Date(timeText);
+        } else {
+            const [hours, minutes, seconds] = timeText.split(':').map(Number);
+            validUntil = new Date();
+            validUntil.setHours(hours, minutes, seconds);
+        }
+
+        if (isNaN(validUntil.getTime())) throw new Error('Format de date invalide');
+
+        if (validUntil < now) {
+            setCodeExpired();
+            return;
+        }
+
+        const diffInSeconds = Math.floor((validUntil - now) / 1000);
+        updateTimeDisplay(diffInSeconds);
+    } catch (error) {
+        console.error('Erreur dans updateRemainingTime:', error);
+        DOM.timeLeftDisplay.textContent = 'Format invalide';
+        DOM.timeLeftDisplay.className = 'badge time-badge bg-secondary';
+    }
+}
+
+function setCodeExpired() {
+    DOM.timeLeftDisplay.textContent = 'Expiré';
+    DOM.timeLeftDisplay.className = 'badge time-badge bg-danger';
+    DOM.codeElement.classList.add('expired-code');
+
+    if (DOM.statusElement) {
+        DOM.statusElement.textContent = 'EXPIRÉ';
+        DOM.statusElement.classList.remove('active', 'used');
+        DOM.statusElement.classList.add('expired');
+    }
+}
+
+function updateTimeDisplay(seconds) {
+    if (seconds <= 0) {
+        DOM.timeLeftDisplay.textContent = 'Expiré';
+        DOM.timeLeftDisplay.className = 'badge time-badge bg-danger';
+    } else {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        DOM.timeLeftDisplay.textContent = `${mins}:${secs.toString().padStart(2, '0')} restants`;
+        DOM.timeLeftDisplay.className = seconds < 60
+            ? 'badge time-badge bg-warning text-dark'
+            : 'badge time-badge bg-light text-dark';
+    }
+}
+
+function updateLastRefreshTime() {
+    if (DOM.updateTimeElement) {
+        DOM.updateTimeElement.textContent = new Date().toLocaleTimeString();
+    }
+}
+
+function startAutoRefresh() {
+    setInterval(updateRemainingTime, 1000);
+    setInterval(() => state.autoRefreshEnabled && refreshDashboard(), CONFIG.refreshInterval);
+    setInterval(updateLastRefreshTime, 60000);
+    setInterval(checkApiStatus, 30000);
+    checkApiStatus();
+}
+
+async function checkApiStatus() {
+    try {
+        const response = await fetch('/api/code', {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin'
+        });
+
+        if (response.ok) {
+            state.apiFailCount = 0;
+            if (state.connectionProblem) {
+                showNotification('Connexion au serveur rétablie', 'success');
+                state.connectionProblem = false;
+            }
+        } else {
+            throw new Error('API non disponible');
+        }
+    } catch {
+        state.apiFailCount++;
+        handleApiFailure();
+    }
+}
+
+function handleApiFailure() {
+    if (state.apiFailCount >= CONFIG.maxRetries && !state.connectionProblem) {
+        showNotification('Problème de connexion avec le serveur. Essayez de rafraîchir la page.', 'error');
+        state.connectionProblem = true;
+    }
+}
+
+function handleFooterLayout() {
+    const footer = document.querySelector('.dashboard-footer');
+    if (footer) {
+        footer.style.padding = window.innerWidth < 768 ? '0.8rem 0' : '1rem 0';
+    }
+}
+
+window.addEventListener('resize', handleFooterLayout);
+
+// Fonctions utilitaires restantes
+function getLogIcon(log) {
+    if (log.event === "door_open") {
+        return log.status === "success"
+            ? '<i class="bi bi-door-open success"></i>'
+            : '<i class="bi bi-door-closed danger"></i>';
+    } else if (log.event === "door_close") {
+        return '<i class="bi bi-door-closed primary"></i>';
+    }
+    return '<i class="bi bi-activity warning"></i>';
+}
+
+function getLogEventText(log) {
+    if (log.event === "door_open") return log.status === "success" ? 'Ouverture' : 'Tentative échouée';
+    if (log.event === "door_close") return 'Fermeture';
+    return log.event;
+}
+
+function formatTimestamp(timestamp) {
+    if (!timestamp) return '';
+    try {
+        return new Date(timestamp).toLocaleString();
+    } catch {
+        return timestamp;
+    }
+}
+
+function formatReason(reason) {
+    return reason ? reason.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
+}
+
+function formatAlertType(type) {
+    return type ? type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
+}
+
+function sanitizeHTML(str) {
+    if (!str) return '';
+    const temp = document.createElement('div');
+    temp.textContent = str;
+    return temp.innerHTML;
+}
+
+function showNotification(message, type = 'success') {
+    message = sanitizeHTML(message);
+    const notification = document.createElement('div');
+    notification.className = `toast align-items-center text-white bg-${
+        type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'danger'
+    } position-fixed bottom-0 end-0 m-3`;
+    notification.setAttribute('role', 'alert');
+    notification.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">${message.replace(/\n/g, '<br>')}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    `;
+    document.body.appendChild(notification);
+    setTimeout(() => {
+        notification.classList.add('show');
+        setTimeout(() => {
+            notification.classList.remove('show');
+            setTimeout(() => notification.remove(), 500);
+        }, 3000);
+    }, 100);
+}
+
+function resetGenerateButton(isError = false) {
+    if (!DOM.generateBtn) return;
+    DOM.generateBtn.disabled = false;
+    DOM.generateBtn.innerHTML = isError
+        ? '<i class="bi bi-key-fill me-2"></i>Réessayer'
+        : '<i class="bi bi-plus-circle"></i> Générer un code';
+}
