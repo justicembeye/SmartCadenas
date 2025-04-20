@@ -5,26 +5,26 @@
     "max_attempts": 3
   },
   "current_code": {
-    "value": "2785",
-    "generated_at": "2025-04-20T09:52:56.022387",
-    "valid_until": "2025-04-20T09:57:56.022387",
-    "used": false,
+    "value": "2159",
+    "generated_at": "2025-04-20T11:38:53.124990",
+    "valid_until": "2025-04-20T11:43:53.124990",
+    "used": true,
     "used_for_entry": false
   },
   "access_logs": [
     {
       "event": "door_open",
-      "code_used": "5006",
+      "code_used": "6309",
       "agent": "unknown",
-      "timestamp": "2025-04-20T01:31:06.300151",
+      "timestamp": "2025-04-20T11:38:53.116309",
       "ip_address": "127.0.0.1",
       "status": "success"
     },
     {
       "event": "door_close",
-      "code_used": "5006",
+      "code_used": "6309",
       "agent": "unknown",
-      "timestamp": "2025-04-20T01:31:06.302624",
+      "timestamp": "2025-04-20T11:38:53.119222",
       "ip_address": "127.0.0.1",
       "status": "success",
       "reason": "Code invalidé après sortie"
@@ -33,16 +33,16 @@
       "event": "door_open",
       "code_used": "0000",
       "agent": "unknown",
-      "timestamp": "2025-04-20T01:31:06.305119",
+      "timestamp": "2025-04-20T11:38:53.122047",
       "ip_address": "127.0.0.1",
       "status": "failed",
-      "reason": "code_expired"
+      "reason": "code_incorrect"
     },
     {
       "event": "door_close",
-      "code_used": "9388",
+      "code_used": "2159",
       "agent": "unknown",
-      "timestamp": "2025-04-20T01:31:06.309591",
+      "timestamp": "2025-04-20T11:38:53.127040",
       "ip_address": "127.0.0.1",
       "status": "success",
       "reason": "Code invalidé après sortie"
@@ -51,60 +51,42 @@
       "event": "door_open",
       "code_used": "9999",
       "agent": "unknown",
-      "timestamp": "2025-04-20T01:31:06.311974",
+      "timestamp": "2025-04-20T11:38:53.130147",
       "ip_address": "127.0.0.1",
       "status": "failed",
-      "reason": "code_expired"
+      "reason": "code_incorrect"
     },
     {
       "event": "door_open",
-      "code_used": "4906",
+      "code_used": "2269",
       "agent": "unknown",
-      "timestamp": "2025-04-20T01:31:06.314777",
+      "timestamp": "2025-04-20T11:38:53.132790",
       "ip_address": "127.0.0.1",
       "status": "failed",
-      "reason": "code_expired"
+      "reason": "code_incorrect"
     },
     {
       "event": "door_open",
-      "code_used": "7714",
+      "code_used": "2266",
       "agent": "unknown",
-      "timestamp": "2025-04-20T01:31:06.318249",
+      "timestamp": "2025-04-20T11:38:53.135604",
       "ip_address": "127.0.0.1",
       "status": "failed",
-      "reason": "code_expired"
+      "reason": "code_incorrect"
     },
     {
       "event": "door_open",
-      "code_used": "9764",
+      "code_used": "3468",
       "agent": "unknown",
-      "timestamp": "2025-04-20T01:31:06.321433",
+      "timestamp": "2025-04-20T11:38:53.138228",
       "ip_address": "127.0.0.1",
       "status": "failed",
-      "reason": "code_expired"
-    }
-  ],
-  "alerts": [
-    {
-      "type": "multiple_failed_attempts",
-      "message": "3 tentatives échouées depuis 127.0.0.1",
-      "severity": "high",
-      "timestamp": "2025-04-20T01:31:06.314823",
-      "resolved": false,
-      "_index": 0
-    },
-    {
-      "type": "test",
-      "message": "Alerte de test",
-      "severity": "medium",
-      "timestamp": "2025-04-20T01:31:06.324827",
-      "resolved": false,
-      "_index": 1
+      "reason": "code_incorrect"
     }
   ],
   "agents": {
     "default": {
-      "name": "Technicien",
+      "name": "Lozio",
       "permissions": [
         "basic_access"
       ]
@@ -112,18 +94,36 @@
   },
   "failed_attempts": {
     "count": 2,
-    "last_reset": "2025-04-20T01:31:06.314832",
+    "last_reset": "2025-04-20T11:38:53.132847",
     "attempts": [
       {
-        "timestamp": "2025-04-20T01:31:06.318266",
+        "timestamp": "2025-04-20T11:38:53.135618",
         "ip_address": "127.0.0.1",
         "user_agent": "TestBot/1.0"
       },
       {
-        "timestamp": "2025-04-20T01:31:06.321449",
+        "timestamp": "2025-04-20T11:38:53.138245",
         "ip_address": "127.0.0.1",
         "user_agent": "TestBot/1.0"
       }
     ]
-  }
+  },
+  "alerts": [
+    {
+      "type": "multiple_failed_attempts",
+      "message": "3 tentatives échouées depuis 127.0.0.1",
+      "severity": "high",
+      "timestamp": "2025-04-20T11:38:53.132842",
+      "resolved": false,
+      "_index": 0
+    },
+    {
+      "type": "test",
+      "message": "Alerte de test",
+      "severity": "medium",
+      "timestamp": "2025-04-20T11:38:53.142169",
+      "resolved": false,
+      "_index": 1
+    }
+  ]
 }

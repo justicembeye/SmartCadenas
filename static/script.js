@@ -58,6 +58,25 @@ function setupEventHandlers() {
     // Gestionnaires délégués pour les éléments dynamiques
     document.addEventListener('click', e => {
         if (e.target.closest('.resolve-btn')) handleResolveAlert(e.target.closest('.resolve-btn'));
+
+        // Nouveau code pour gérer les transitions de pagination
+        const paginationLink = e.target.closest('.page-link');
+        if (paginationLink) {
+            const card = paginationLink.closest('.card');
+            if (card) {
+                // Appliquer une classe de transition uniquement sur la carte concernée
+                const entriesContainer = card.querySelector('.log-entries, .alert-entries');
+                if (entriesContainer) {
+                    // Effet de transition plus doux
+                    entriesContainer.style.opacity = '0.7';
+
+                    // Rétablir après le chargement de page
+                    setTimeout(() => {
+                        entriesContainer.style.opacity = '1';
+                    }, 300);
+                }
+            }
+        }
     });
 }
 
@@ -442,7 +461,7 @@ function updateTimeDisplay(seconds) {
         const secs = seconds % 60;
         DOM.timeLeftDisplay.textContent = `${mins}:${secs.toString().padStart(2, '0')} restants`;
         DOM.timeLeftDisplay.className = seconds < 60
-            ? 'badge time-badge bg-warning text-dark'
+            ? 'badge time-badge bg-warning text-dark' 
             : 'badge time-badge bg-light text-dark';
     }
 }
@@ -503,7 +522,7 @@ window.addEventListener('resize', handleFooterLayout);
 function getLogIcon(log) {
     if (log.event === "door_open") {
         return log.status === "success"
-            ? '<i class="bi bi-door-open success"></i>'
+            ? '<i class="bi bi-door-open success"></i>' 
             : '<i class="bi bi-door-closed danger"></i>';
     } else if (log.event === "door_close") {
         return '<i class="bi bi-door-closed primary"></i>';
@@ -568,6 +587,262 @@ function resetGenerateButton(isError = false) {
     if (!DOM.generateBtn) return;
     DOM.generateBtn.disabled = false;
     DOM.generateBtn.innerHTML = isError
-        ? '<i class="bi bi-key-fill me-2"></i>Réessayer'
+        ? '<i class="bi bi-key-fill me-2"></i>Réessayer' 
         : '<i class="bi bi-plus-circle"></i> Générer un code';
 }
+
+document.addEventListener('DOMContentLoaded', function () {
+    // Intercepter les clics sur les liens de pagination
+    setupPagination('.history-card', 'logs_page', loadLogs);
+    setupPagination('.alerts-card', 'alerts_page', loadAlerts);
+
+    function setupPagination(cardSelector, pageParam, loadFunction) {
+        const card = document.querySelector(cardSelector);
+        if (!card) return;
+
+        // Attacher les écouteurs d'événements aux liens de pagination
+        card.addEventListener('click', function (e) {
+            // Vérifier si c'est un lien de pagination qui a été cliqué
+            const target = e.target.closest('.page-link');
+            if (!target) return;
+
+            e.preventDefault(); // Empêcher le comportement par défaut
+
+            // Extraire le numéro de page de l'URL
+            const href = target.getAttribute('href');
+            const url = new URL(href, window.location.origin);
+            const page = url.searchParams.get(pageParam);
+
+            if (page) {
+                // Charger les nouvelles données
+                loadFunction(page);
+
+                // Mettre à jour l'URL sans recharger la page
+                const newUrl = new URL(window.location);
+                newUrl.searchParams.set(pageParam, page);
+                window.history.pushState({}, '', newUrl);
+
+                // Ajouter une classe pour l'effet de transition
+                card.querySelector('.card-body').classList.add('refreshing');
+                setTimeout(() => {
+                    card.querySelector('.card-body').classList.remove('refreshing');
+                }, 300);
+            }
+        });
+    }
+
+    function loadLogs(page) {
+        fetch(`/api/logs?page=${page}&per_page=5`)
+            .then(response => response.json())
+            .then(data => {
+                updateLogsUI(data);
+            })
+            .catch(error => console.error('Erreur lors du chargement des logs:', error));
+    }
+
+    function loadAlerts(page) {
+        fetch(`/api/alerts?page=${page}&per_page=5&show_resolved=false`)
+            .then(response => response.json())
+            .then(data => {
+                updateAlertsUI(data);
+            })
+            .catch(error => console.error('Erreur lors du chargement des alertes:', error));
+    }
+
+    function updateLogsUI(data) {
+        const logsContainer = document.querySelector('.history-card .log-entries');
+        const paginationContainer = document.querySelector('.history-card .pagination');
+
+        if (!logsContainer) return;
+
+        // Effacer le contenu existant
+        logsContainer.innerHTML = '';
+
+        // Si aucun log, afficher l'état vide
+        if (!data.logs || data.logs.length === 0) {
+            logsContainer.innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-journal"></i>
+                    <p>Aucun événement enregistré</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Générer le HTML pour chaque log
+        data.logs.forEach(log => {
+            let iconClass = 'bi-activity warning';
+            if (log.event === 'door_open') {
+                iconClass = log.status === 'success' ? 'bi-door-open success' : 'bi-door-closed danger';
+            } else if (log.event === 'door_close') {
+                iconClass = 'bi-door-closed primary';
+            }
+
+            const logHtml = `
+                <div class="log-entry ${log.status || ''}">
+                    <div class="log-icon">
+                        <i class="bi ${iconClass}"></i>
+                    </div>
+                    <div class="log-details">
+                        <div class="log-main">
+                            <span class="log-event">
+                                ${log.event === 'door_open'
+                ? (log.status === 'success' ? 'Ouverture' : 'Tentative échouée')
+                : log.event === 'door_close' ? 'Fermeture' : log.event}
+                            </span>
+                            <span class="log-time">${formatDateTime(log.timestamp)}</span>
+                        </div>
+                        <div class="log-secondary">
+                            <span class="log-agent"><i class="bi bi-person"></i> ${log.agent || 'Inconnu'}</span>
+                            ${log.code_used ? `<span class="log-code"><i class="bi bi-key"></i> ${log.code_used}</span>` : ''}
+                        </div>
+                        ${log.reason ? `
+                            <div class="log-reason">
+                                <i class="bi bi-info-circle"></i> ${log.reason.replace(/_/g, ' ').charAt(0).toUpperCase() + log.reason.replace(/_/g, ' ').slice(1)}
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+            logsContainer.innerHTML += logHtml;
+        });
+
+        // Mettre à jour la pagination
+        if (paginationContainer && data.pagination) {
+            updatePagination(paginationContainer, data.pagination, 'logs_page');
+        }
+    }
+
+    function updateAlertsUI(data) {
+        const alertsContainer = document.querySelector('.alerts-card .alert-entries');
+        const paginationContainer = document.querySelector('.alerts-card .pagination');
+
+        if (!alertsContainer) return;
+
+        // Effacer le contenu existant
+        alertsContainer.innerHTML = '';
+
+        // Si aucune alerte, afficher l'état vide
+        if (!data.alerts || data.alerts.length === 0) {
+            alertsContainer.innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-check-circle"></i>
+                    <p>Aucune alerte active</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Générer le HTML pour chaque alerte
+        data.alerts.forEach((alert, index) => {
+            const alertHtml = `
+                <div class="alert-entry severity-${alert.severity}" data-alert-index="${alert._index !== undefined ? alert._index : index}">
+                    <div class="alert-icon">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                    </div>
+                    <div class="alert-content">
+                        <div class="alert-header">
+                            <span class="alert-title">${alert.type.replace(/_/g, ' ').charAt(0).toUpperCase() + alert.type.replace(/_/g, ' ').slice(1)}</span>
+                            <span class="alert-severity">${alert.severity.charAt(0).toUpperCase() + alert.severity.slice(1)}</span>
+                        </div>
+                        <p class="alert-message">${alert.message}</p>
+                        <div class="alert-footer">
+                            <span class="alert-time">${formatDateTime(alert.timestamp)}</span>
+                            <button class="btn btn-resolve resolve-btn" data-alert-index="${alert._index !== undefined ? alert._index : index}">
+                                <i class="bi bi-check-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            alertsContainer.innerHTML += alertHtml;
+        });
+
+        // Réattacher les événements pour les boutons de résolution
+        document.querySelectorAll('.resolve-btn').forEach(btn => {
+            btn.addEventListener('click', handleAlertResolve);
+        });
+
+        // Mettre à jour la pagination
+        if (paginationContainer && data.pagination) {
+            updatePagination(paginationContainer, data.pagination, 'alerts_page');
+        }
+    }
+
+    function updatePagination(container, pagination, pageParam) {
+        const currentPage = pagination.page;
+        const totalPages = pagination.pages;
+
+        if (totalPages <= 1) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'flex';
+
+        // Créer la structure de pagination
+        let paginationHtml = `
+            <ul class="pagination">
+                <li class="page-item ${currentPage <= 1 ? 'disabled' : ''}">
+                    <a class="page-link" href="?${pageParam}=${currentPage - 1}" aria-label="Précédent">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+        `;
+
+        // Ajouter les numéros de page
+        const startPage = Math.max(1, currentPage - 2);
+        const endPage = Math.min(totalPages, currentPage + 2);
+
+        for (let i = startPage; i <= endPage; i++) {
+            paginationHtml += `
+                <li class="page-item ${i === currentPage ? 'active' : ''}">
+                    <a class="page-link" href="?${pageParam}=${i}">${i}</a>
+                </li>
+            `;
+        }
+
+        paginationHtml += `
+                <li class="page-item ${currentPage >= totalPages ? 'disabled' : ''}">
+                    <a class="page-link" href="?${pageParam}=${currentPage + 1}" aria-label="Suivant">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+            </ul>
+        `;
+
+        container.innerHTML = paginationHtml;
+    }
+
+    function handleAlertResolve(e) {
+        const alertIndex = e.currentTarget.dataset.alertIndex;
+
+        fetch(`/api/alert/${alertIndex}/resolve`, {
+            method: 'POST'
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'alert_resolved') {
+                    // Recharger les alertes
+                    const currentPage = new URL(window.location).searchParams.get('alerts_page') || '1';
+                    loadAlerts(currentPage);
+                }
+            })
+            .catch(error => console.error('Erreur lors de la résolution de l\'alerte:', error));
+    }
+
+    function formatDateTime(timestamp) {
+        if (!timestamp) return '';
+
+        const date = new Date(timestamp);
+        return date.toLocaleString('fr-FR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    }
+});
+

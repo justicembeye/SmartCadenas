@@ -22,7 +22,51 @@
     --spacing-md: 1.5rem;
     --spacing-lg: 2rem;
     --spacing-xl: 3rem;
+
+    /* Variables pour le thème clair (par défaut) */
+    --bg-main: #f8fafc;
+    --bg-card: #ffffff;
+    --text-main: #1a1a2e;
+    --text-secondary: #4a4a68;
+    --border-light: #e0e0e0;
 }
+
+
+/* Thème sombre */
+.dark-theme {
+    --primary: #4a94ff;
+    --primary-dark: #3a77d9;
+    --secondary: #9254f0;
+    --danger: #ff4081;
+    --warning: #ff7b43;
+    --success: #3ddccb;
+
+    --bg-main: #121212;
+    --bg-card: #1e1e2e;
+    --text-main: #f0f0f0;
+    --text-secondary: #b0b0c0;
+    --border-light: #2a2a3a;
+
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+body {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+}
+
+.dashboard-container {
+    background-color: var(--bg-main);
+}
+
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-light);
+}
+
+
+
 
 /* Structure principale */
 .dashboard-container {
@@ -617,18 +661,22 @@
     border-top: 1px solid var(--gray-light);
 }
 
-.pagination {
+.pagination .page-link {
+    display: flex;
+    align-items: center;
     justify-content: center;
+    height: 36px;
+    width: 36px;
+    padding: 0;
 }
 
-.page-link {
-    border: none;
-    color: var(--gray-dark);
-    margin: 0 0.25rem;
-    border-radius: 8px !important;
-    min-width: 36px;
-    text-align: center;
+
+.pagination .bi-chevron-left,
+.pagination .bi-chevron-right {
+    font-size: 0.9rem;
+    line-height: 1;
 }
+
 
 .page-item.active .page-link {
     background-color: var(--primary);
@@ -636,8 +684,44 @@
 }
 
 .page-item.disabled .page-link {
-    color: var(--gray-light);
+    opacity: 0.4;
+    color: var(--gray)
+
 }
+
+
+/* Animation de rafraîchissement */
+@keyframes refresh-transition {
+    0% {
+        opacity: 0.7;
+        transform: translateY(5px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.refreshing .log-entries,
+.refreshing .alert-entries {
+    animation: refresh-transition 0.3s ease-out;
+}
+
+/* Style pour indiquer l'interaction */
+.page-link {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.page-link:hover {
+    background-color: var(--primary-dark);
+    color: white;
+}
+
+.page-item.active .page-link:hover {
+    background-color: var(--primary-dark);
+}
+
 
 
 /* Footer */
@@ -806,4 +890,17 @@
 }
 .refreshing {
     animation: refresh-pulse 1s ease;
+}
+
+/* Ajouter ceci à votre CSS existant */
+.log-entries, .alert-entries {
+    min-height: 300px; /* Ajuster selon vos besoins */
+    position: relative;
+    transition: opacity 0.3s ease; /* Transition douce sur l'opacité seulement */
+}
+
+/* Améliorer l'effet de rafraîchissement */
+.refreshing .log-entries,
+.refreshing .alert-entries {
+    opacity: 0.7;
 }
