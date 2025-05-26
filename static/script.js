@@ -3,27 +3,23 @@
  * Gère le rafraîchissement des données, les interactions utilisateur et les animations
  */
 
-// Configuration globale
 const CONFIG = {
     refreshInterval: 10000,    // Intervalle de rafraîchissement en ms
-    apiTimeout: 5000,          // Timeout pour les requêtes API en ms
-    maxRetries: 3,             // Nombre maximal de tentatives en cas d'échec
+    apiTimeout: 7000,          // Timeout pour les requêtes API en ms (un peu augmenté)
+    maxRetries: 3,             // Nombre maximal de tentatives en cas d'échec API
     minRefreshDelay: 2000      // Délai minimum entre les rafraîchissements manuels
 };
 
-// État global
 const state = {
     refreshTimer: null,
     isRefreshing: false,
-    currentCode: null,
+    currentCode: null, // Structure attendue: { value, valid_until, generated_at, used, used_for_entry } ou null
     connectionProblem: false,
-    refreshCount: 0,
     lastRefreshTime: Date.now(),
     autoRefreshEnabled: true,
     apiFailCount: 0
 };
 
-// Sélecteurs DOM fréquemment utilisés
 const DOM = {
     get refreshBtn() { return document.getElementById('refresh-btn'); },
     get generateBtn() { return document.getElementById('generate-btn'); },
@@ -31,175 +27,170 @@ const DOM = {
     get codeElement() { return document.querySelector('.code-display'); },
     get statusElement() { return document.querySelector('.meta-item.status'); },
     get timeLeftDisplay() { return document.getElementById('time-left'); },
-    get validUntilElement() { return document.querySelector('.meta-item.validity span:last-child'); },
+    get validUntilElement() { return document.querySelector('.meta-item.validity span:last-child'); }, // Corrigé pour cibler le span précis
     get updateTimeElement() { return document.getElementById('update-time'); },
-    get logEntries() { return document.querySelector('.log-entries'); },
-    get alertEntries() { return document.querySelector('.alert-entries'); },
-    get alertCounter() { return document.querySelector('.badge.counter-badge.alert'); }
+    get logEntriesContainer() { return document.querySelector('.history-card .log-entries'); },
+    get alertEntriesContainer() { return document.querySelector('.alerts-card .alert-entries'); },
+    get logPaginationContainer() { return document.querySelector('.history-card .pagination-container'); },
+    get alertPaginationContainer() { return document.querySelector('.alerts-card .pagination-container'); },
+    get alertCounter() { return document.querySelector('.alerts-card .badge.counter-badge.alert'); }
 };
 
-/**
- * Initialisation de l'application
- */
 document.addEventListener('DOMContentLoaded', () => {
     setupEventHandlers();
-    addCustomStyles();
-    updateRemainingTime();
-    startAutoRefresh();
     handleFooterLayout();
-    console.log("SmartCadenas Dashboard initialisé");
+
+    // Charge les données initiales et seulement ensuite démarre les timers
+    refreshDashboard(true).finally(() => {
+        updateRemainingTime(); // Initialise l'affichage du compte à rebours
+        startAutoRefresh();    // Démarre les rafraîchissements automatiques
+    });
+
+    // Initialisation de la pagination (les données sont chargées par refreshDashboard)
+    const currentUrlParams = new URLSearchParams(window.location.search);
+    const initialLogsPage = currentUrlParams.get('logs_page') || '1';
+    const initialAlertsPage = currentUrlParams.get('alerts_page') || '1';
+
+    // Les fonctions loadLogs et loadAlerts seront appelées par refreshDashboard,
+    // ou par les clics sur la pagination.
+    // Pour que la pagination initiale respecte les params URL, refreshDashboard les lit.
+
+    setupPagination('.history-card', 'logs_page', loadLogs);
+    setupPagination('.alerts-card', 'alerts_page', loadAlerts);
+    console.log("SmartCadenas Dashboard Initialisé.");
 });
 
-// Gestion des événements
 function setupEventHandlers() {
     if (DOM.refreshBtn) DOM.refreshBtn.addEventListener('click', manualRefresh);
     if (DOM.generateBtn) DOM.generateBtn.addEventListener('click', generateNewCode);
 
-    // Gestionnaires délégués pour les éléments dynamiques
+    // Gestionnaire délégué pour les boutons de résolution d'alerte
     document.addEventListener('click', e => {
-        if (e.target.closest('.resolve-btn')) handleResolveAlert(e.target.closest('.resolve-btn'));
-
-        // Nouveau code pour gérer les transitions de pagination
-        const paginationLink = e.target.closest('.page-link');
-        if (paginationLink) {
-            const card = paginationLink.closest('.card');
-            if (card) {
-                // Appliquer une classe de transition uniquement sur la carte concernée
-                const entriesContainer = card.querySelector('.log-entries, .alert-entries');
-                if (entriesContainer) {
-                    // Effet de transition plus doux
-                    entriesContainer.style.opacity = '0.7';
-
-                    // Rétablir après le chargement de page
-                    setTimeout(() => {
-                        entriesContainer.style.opacity = '1';
-                    }, 300);
-                }
-            }
+        const resolveButton = e.target.closest('.resolve-btn');
+        if (resolveButton) {
+            e.preventDefault(); // Important pour les boutons dans des liens
+            handleAlertResolve(resolveButton);
         }
     });
 }
 
-/**
- * Styles CSS personnalisés
- */
-function addCustomStyles() {
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes rotating {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        .rotating {
-            animation: rotating 1s linear infinite;
-        }
-        .dashboard-container.refreshing {
-            opacity: 0.9;
-            transition: opacity 0.3s ease;
-        }
-        .code-display.expired-code {
-            color: var(--danger);
-            border-color: var(--danger);
-        }
-        .meta-item.status.expired {
-            background-color: rgba(255, 0, 110, 0.1);
-            color: var(--danger);
-        }
-    `;
-    document.head.appendChild(style);
-}
-
-// Rafraîchissement manuel
 async function manualRefresh() {
-    if (!DOM.refreshBtn) return;
-
+    if (!DOM.refreshBtn || DOM.refreshBtn.disabled) return;
     const now = Date.now();
-    if (now - state.lastRefreshTime < CONFIG.minRefreshDelay) {
-        showNotification('Merci de patienter avant de rafraîchir à nouveau', 'warning');
+    if (now - state.lastRefreshTime < CONFIG.minRefreshDelay && !state.isRefreshing) {
+        showNotification('Merci de patienter avant de rafraîchir à nouveau.', 'warning');
         return;
     }
-
     state.lastRefreshTime = now;
     DOM.refreshBtn.classList.add('rotating');
     DOM.refreshBtn.disabled = true;
-
     try {
-        await refreshDashboard(true);
-    } catch {
-        setTimeout(() => window.location.reload(), 500);
+        await refreshDashboard(true); // Forcer le rafraîchissement
+    } catch (error) {
+        showNotification("Échec du rafraîchissement manuel.", "error");
     } finally {
-        DOM.refreshBtn.classList.remove('rotating');
-        DOM.refreshBtn.disabled = false;
+        if (DOM.refreshBtn) { // S'assurer que l'élément existe encore
+            DOM.refreshBtn.classList.remove('rotating');
+            DOM.refreshBtn.disabled = false;
+        }
     }
 }
 
-// Génération de code
 async function generateNewCode() {
-    if (!DOM.generateBtn) return;
+    if (!DOM.generateBtn || DOM.generateBtn.disabled) return;
+
+    DOM.generateBtn.disabled = true;
+    DOM.generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Génération...';
 
     try {
-        DOM.generateBtn.disabled = true;
-        DOM.generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Génération...';
-
-        await new Promise(resolve => setTimeout(resolve, 300));
-
-        const response = await fetch('/api/code', {
+        const response = await fetch('/api/code', { // POST pour générer
             method: 'POST',
             headers: getRequestHeaders(),
-            credentials: 'same-origin'
+            credentials: 'same-origin',
+            signal: AbortSignal.timeout(CONFIG.apiTimeout)
         });
 
         if (response.ok) {
-            const data = await response.json();
-            if (!data.code) throw new Error('Réponse invalide du serveur');
+            const apiData = await response.json(); // API renvoie { code, valid_until, generated_at }
+            if (!apiData.code || !apiData.valid_until) {
+                throw new Error('Réponse API invalide pour la génération de code.');
+            }
 
-            const validTime = new Date(data.valid_until).toLocaleTimeString();
-            showNotification(`Nouveau code généré: ${sanitizeHTML(data.code)}\nValide jusqu'à ${sanitizeHTML(validTime)}`);
+            state.currentCode = {
+                value: apiData.code,
+                valid_until: apiData.valid_until,
+                generated_at: apiData.generated_at,
+                used: false, // Un nouveau code est toujours non utilisé
+                used_for_entry: false
+            };
 
-            setTimeout(async () => {
-                await refreshDashboard(true);
-                resetGenerateButton();
-            }, 1000);
+            const validTime = new Date(state.currentCode.valid_until).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            showNotification(`Nouveau code généré: ${sanitizeHTML(state.currentCode.value)}. Valide jusqu'à ${sanitizeHTML(validTime)}`, 'success');
+
+            updateCodeDisplay(); // Mettre à jour l'UI immédiatement avec le nouveau state.currentCode
+                                 // updateRemainingTime() sera appelé à l'intérieur de updateCodeDisplay
+
         } else {
             throw await handleApiError(response);
         }
     } catch (error) {
-        console.error('Erreur:', error);
-        showNotification(error.message || 'Erreur de connexion au serveur', 'error');
-        resetGenerateButton(true);
+        console.error('Erreur génération code:', error);
+        showNotification(error.message || 'Erreur de connexion au serveur lors de la génération.', 'error');
+    } finally {
+        resetGenerateButton();
     }
 }
 
-// Rafraîchissement du dashboard
 async function refreshDashboard(forceRefresh = false) {
-    if (!state.autoRefreshEnabled || (state.isRefreshing && !forceRefresh)) return false;
+    if (!state.autoRefreshEnabled && !forceRefresh) return Promise.resolve(false);
+    if (state.isRefreshing && !forceRefresh) return Promise.resolve(false);
 
     state.isRefreshing = true;
     if (DOM.dashboardContainer) DOM.dashboardContainer.classList.add('refreshing');
 
     try {
-        const [codeData, logsData, alertsData] = await Promise.all([
-            fetchData('/api/code'),
-            fetchData('/api/logs'),
-            fetchData('/api/alerts')
+        const currentUrlParams = new URLSearchParams(window.location.search);
+        const logsPage = currentUrlParams.get('logs_page') || '1';
+        const alertsPage = currentUrlParams.get('alerts_page') || '1';
+
+        const codeApiResponse = await fetchData('/api/code'); // GET pour l'état actuel du code
+
+        if (codeApiResponse && codeApiResponse.code && codeApiResponse.valid_until) {
+            // L'API GET /api/code renvoie une structure plate: { code, valid_until, used, generated_at, ... }
+            state.currentCode = {
+                value: codeApiResponse.code,
+                valid_until: codeApiResponse.valid_until,
+                generated_at: codeApiResponse.generated_at,
+                used: codeApiResponse.used || false, // Assurer une valeur booléenne
+                used_for_entry: codeApiResponse.used_for_entry || false, // Assurer une valeur booléenne
+            };
+        } else {
+            state.currentCode = null; // Pas de code actif ou réponse invalide
+        }
+        updateCodeDisplay(); // Mettre à jour l'UI du code basé sur state.currentCode
+
+        // Charger les logs et les alertes en parallèle
+        const [logsData, alertsData] = await Promise.all([
+            fetchData(`/api/logs?page=${logsPage}&per_page=5`),
+            fetchData(`/api/alerts?page=${alertsPage}&per_page=5&show_resolved=false`)
         ]);
 
-        updateCodeDisplay(codeData);
-        if (logsData) updateLogs(logsData.logs);
-        if (alertsData) updateAlerts(alertsData.alerts);
+        if (logsData) updateLogsUI(logsData, logsPage, alertsPage);
+        if (alertsData) updateAlertsUI(alertsData, alertsPage, logsPage);
 
         updateLastRefreshTime();
         state.apiFailCount = 0;
         if (state.connectionProblem) {
-            showNotification('Connexion au serveur rétablie', 'success');
+            showNotification('Connexion au serveur rétablie.', 'success');
             state.connectionProblem = false;
         }
-
         return true;
     } catch (error) {
-        console.error('Refresh failed:', error);
+        console.error('Refresh Dashboard failed:', error);
         state.apiFailCount++;
-        handleApiFailure();
+        handleApiFailure(); // Gère la notification d'erreur si nécessaire
+        state.currentCode = null; // En cas d'erreur majeure, considérer qu'il n'y a pas de code
+        updateCodeDisplay(); // Afficher l'état "aucun code"
         return false;
     } finally {
         state.isRefreshing = false;
@@ -209,640 +200,517 @@ async function refreshDashboard(forceRefresh = false) {
     }
 }
 
-// Mise à jour de l'affichage
-function updateCodeDisplay(data) {
-    if (!DOM.codeElement || !DOM.statusElement) return;
+function updateCodeDisplay() {
+    if (!DOM.codeElement || !DOM.statusElement || !DOM.timeLeftDisplay || !DOM.validUntilElement) {
+        return;
+    }
 
-    const code = data?.current_code;
-    if (!code?.value) return;
+    const codeToDisplay = state.currentCode;
 
-    const isValid = isCodeValid(code);
+    if (!codeToDisplay || !codeToDisplay.value) {
+        DOM.codeElement.textContent = "----";
+        DOM.codeElement.className = 'code-display expired-code'; // Style "pas de code"
+        DOM.statusElement.textContent = 'AUCUN CODE';
+        DOM.statusElement.className = 'meta-item status expired'; // Style pour "aucun code"
+        DOM.timeLeftDisplay.textContent = 'Inactif';
+        DOM.timeLeftDisplay.className = 'badge time-badge bg-secondary';
+        DOM.validUntilElement.textContent = 'N/A';
+        return;
+    }
 
-    DOM.codeElement.textContent = code.value;
-    DOM.codeElement.classList.toggle('expired-code', !isValid);
+    const isActuallyUsed = codeToDisplay.used;
+    const isStillValidDate = isCodeValid(codeToDisplay); // Vérifie si valid_until > now
 
-    DOM.statusElement.classList.remove('active', 'used');
-    DOM.statusElement.classList.toggle('expired', !isValid);
-    DOM.statusElement.textContent = isValid ? 'ACTIF' : 'EXPIRÉ';
+    DOM.codeElement.textContent = codeToDisplay.value;
 
+    if (isActuallyUsed) {
+        DOM.codeElement.className = 'code-display expired-code'; // Style "utilisé" (peut être comme expiré)
+        DOM.statusElement.textContent = 'UTILISÉ';
+        DOM.statusElement.className = 'meta-item status used'; // Classe CSS 'used'
+        DOM.timeLeftDisplay.textContent = 'Utilisé';
+        DOM.timeLeftDisplay.className = 'badge time-badge bg-info text-dark'; // Style pour "utilisé"
+    } else if (!isStillValidDate) {
+        DOM.codeElement.className = 'code-display expired-code';
+        DOM.statusElement.textContent = 'EXPIRÉ';
+        DOM.statusElement.className = 'meta-item status expired';
+        DOM.timeLeftDisplay.textContent = 'Expiré';
+        DOM.timeLeftDisplay.className = 'badge time-badge bg-danger';
+    } else { // Code VALIDE et NON UTILISÉ
+        DOM.codeElement.className = 'code-display'; // Style normal
+        DOM.statusElement.textContent = 'ACTIF';
+        DOM.statusElement.className = 'meta-item status active'; // Style vert pour actif
+        // Le compte à rebours est géré par updateRemainingTime
+    }
+
+    if (codeToDisplay.valid_until) {
+        try {
+            DOM.validUntilElement.textContent = `Valide jusqu'à ${new Date(codeToDisplay.valid_until).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+        } catch (e) { DOM.validUntilElement.textContent = 'Erreur date'; }
+    } else {
+        DOM.validUntilElement.textContent = 'N/A';
+    }
+    // updateRemainingTime est appelé par l'intervalle, mais un appel ici assure la synchro immédiate
     updateRemainingTime();
 }
 
-function updateLogs(logs) {
-    if (!DOM.logEntries || !logs || !Array.isArray(logs)) return;
-    if (document.querySelector('.pagination')) return;
-
-    if (logs.length === 0) {
-        DOM.logEntries.innerHTML = `
-            <div class="empty-state">
-                <i class="bi bi-journal"></i>
-                <p>Aucun événement enregistré</p>
-            </div>
-        `;
-        return;
-    }
-
-    DOM.logEntries.innerHTML = logs.slice(0, 10).map(log => `
-        <div class="log-entry ${log.status || ''}">
-            <div class="log-icon">${getLogIcon(log)}</div>
-            <div class="log-details">
-                <div class="log-main">
-                    <span class="log-event">${getLogEventText(log)}</span>
-                    <span class="log-time">${formatTimestamp(log.timestamp)}</span>
-                </div>
-                <div class="log-secondary">
-                    <span class="log-agent"><i class="bi bi-person"></i> ${log.agent || 'Inconnu'}</span>
-                    ${log.code_used ? `<span class="log-code"><i class="bi bi-123"></i> ${log.code_used}</span>` : ''}
-                </div>
-                ${log.reason ? `
-                    <div class="log-reason">
-                        <i class="bi bi-info-circle"></i> ${formatReason(log.reason)}
-                    </div>
-                ` : ''}
-            </div>
-        </div>
-    `).join('');
-}
-
-function updateAlerts(alerts) {
-    if (!DOM.alertEntries || !alerts) return;
-    if (document.querySelector('.pagination')) return;
-
-    if (DOM.alertCounter) {
-        DOM.alertCounter.textContent = `${alerts.length} non résolue${alerts.length !== 1 ? 's' : ''}`;
-    }
-
-    if (alerts.length === 0) {
-        DOM.alertEntries.innerHTML = `
-            <div class="empty-state">
-                <i class="bi bi-check-circle"></i>
-                <p>Aucune alerte active</p>
-            </div>
-        `;
-        return;
-    }
-
-    DOM.alertEntries.innerHTML = alerts.map((alert, index) => `
-        <div class="alert-entry severity-${alert.severity}" data-alert-index="${alert._index || index}">
-            <div class="alert-icon">
-                <i class="bi bi-exclamation-triangle-fill"></i>
-            </div>
-            <div class="alert-content">
-                <div class="alert-header">
-                    <span class="alert-title">${formatAlertType(alert.type)}</span>
-                    <span class="alert-severity">${alert.severity.charAt(0).toUpperCase() + alert.severity.slice(1)}</span>
-                </div>
-                <p class="alert-message">${alert.message}</p>
-                <div class="alert-footer">
-                    <span class="alert-time">${formatTimestamp(alert.timestamp)}</span>
-                    <button class="btn btn-resolve resolve-btn" data-alert-index="${alert._index || index}">
-                        <i class="bi bi-check-lg"></i>
-                    </button>
-                </div>
-            </div>
-        </div>
-    `).join('');
-}
-
-// Gestion des alertes
-async function handleResolveAlert(button) {
-    const alertIndex = button.dataset.alertIndex;
-    const alertItem = button.closest('.alert-entry');
-    if (!alertItem) return;
-
-    button.disabled = true;
-    const originalHtml = button.innerHTML;
-    button.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-
-    try {
-        const response = await fetch(`/api/alert/${alertIndex}/resolve`, {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            credentials: 'same-origin'
-        });
-
-        if (!response.ok) throw await handleApiError(response);
-
-        animateAlertRemoval(alertItem);
-        updateAlertCounter();
-        checkEmptyAlerts();
-    } catch (error) {
-        console.error('Erreur:', error);
-        showNotification(error.message || 'Erreur lors de la résolution', 'error');
-        button.innerHTML = originalHtml;
-        button.disabled = false;
-    }
-}
-
-function animateAlertRemoval(alertItem) {
-    alertItem.style.transition = 'all 0.3s ease';
-    alertItem.style.opacity = '0';
-    alertItem.style.height = `${alertItem.offsetHeight}px`;
-
-    setTimeout(() => {
-        alertItem.style.height = '0';
-        alertItem.style.margin = '0';
-        alertItem.style.padding = '0';
-        alertItem.style.border = 'none';
-
-        setTimeout(() => alertItem.remove(), 300);
-    }, 200);
-}
-
-function updateAlertCounter() {
-    if (!DOM.alertCounter) return;
-    const remainingAlerts = document.querySelectorAll('.alert-entry').length;
-    DOM.alertCounter.textContent = `${remainingAlerts} non résolue${remainingAlerts !== 1 ? 's' : ''}`;
-}
-
-function checkEmptyAlerts() {
-    if (!DOM.alertEntries) return;
-    if (DOM.alertEntries.querySelectorAll('.alert-entry').length === 0) {
-        DOM.alertEntries.innerHTML = `
-            <div class="empty-state">
-                <i class="bi bi-check-circle"></i>
-                <p>Aucune alerte active</p>
-            </div>
-        `;
-    }
-}
-
-// Utilitaires
-function getRequestHeaders() {
-    return {
-        'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-    };
-}
-
-async function fetchData(endpoint) {
-    const response = await fetch(endpoint, {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        credentials: 'same-origin'
-    });
-    if (!response.ok) throw new Error(`Erreur HTTP: ${response.status}`);
-    return await response.json();
-}
-
-async function handleApiError(response) {
-    try {
-        const error = await response.json();
-        return new Error(error.error || 'Échec de la requête API');
-    } catch {
-        return new Error('Erreur lors de la lecture de la réponse');
-    }
-}
-
-function isCodeValid(code) {
-    if (!code?.valid_until) return false;
-    try {
-        return new Date(code.valid_until) > new Date();
-    } catch (e) {
-        console.error('Erreur lors de la vérification du code:', e);
-        return false;
-    }
-}
-
 function updateRemainingTime() {
-    if (!DOM.timeLeftDisplay || !DOM.codeElement || !DOM.validUntilElement) return;
+    if (!DOM.timeLeftDisplay) return;
+    const code = state.currentCode;
+
+    if (!code || !code.value || !code.valid_until) {
+        if (DOM.timeLeftDisplay.textContent !== 'Inactif') {
+             DOM.timeLeftDisplay.textContent = 'Inactif';
+             DOM.timeLeftDisplay.className = 'badge time-badge bg-secondary';
+        }
+        return;
+    }
+
+    if (code.used) {
+        if (DOM.timeLeftDisplay.textContent !== 'Utilisé') {
+            DOM.timeLeftDisplay.textContent = 'Utilisé';
+            DOM.timeLeftDisplay.className = 'badge time-badge bg-info text-dark';
+        }
+        return;
+    }
 
     try {
-        const timeText = DOM.validUntilElement.textContent.replace('Valide jusqu\'à ', '').trim();
+        const validUntilDate = new Date(code.valid_until);
         const now = new Date();
-        let validUntil;
 
-        if (timeText.includes('/')) {
-            const [datePart, timePart] = timeText.split(' ');
-            const [day, month, year] = datePart.split('/').map(Number);
-            const [hours, minutes, seconds] = timePart.split(':').map(Number);
-            validUntil = new Date(year, month - 1, day, hours, minutes, seconds);
-        } else if (timeText.includes('-')) {
-            validUntil = new Date(timeText);
-        } else {
-            const [hours, minutes, seconds] = timeText.split(':').map(Number);
-            validUntil = new Date();
-            validUntil.setHours(hours, minutes, seconds);
-        }
-
-        if (isNaN(validUntil.getTime())) throw new Error('Format de date invalide');
-
-        if (validUntil < now) {
-            setCodeExpired();
+        if (isNaN(validUntilDate.getTime())) {
+            setCodeExpiredStyles();
             return;
         }
 
-        const diffInSeconds = Math.floor((validUntil - now) / 1000);
-        updateTimeDisplay(diffInSeconds);
+        if (validUntilDate < now) {
+            setCodeExpiredStyles();
+            return;
+        }
+        const diffInSeconds = Math.floor((validUntilDate - now) / 1000);
+        updateTimeDisplay(diffInSeconds); // Met à jour le texte et la couleur du badge
     } catch (error) {
         console.error('Erreur dans updateRemainingTime:', error);
-        DOM.timeLeftDisplay.textContent = 'Format invalide';
-        DOM.timeLeftDisplay.className = 'badge time-badge bg-secondary';
+        DOM.timeLeftDisplay.textContent = 'Erreur';
+        DOM.timeLeftDisplay.className = 'badge time-badge bg-danger';
     }
 }
 
-function setCodeExpired() {
-    DOM.timeLeftDisplay.textContent = 'Expiré';
-    DOM.timeLeftDisplay.className = 'badge time-badge bg-danger';
-    DOM.codeElement.classList.add('expired-code');
-
+function setCodeExpiredStyles() {
+    if (DOM.timeLeftDisplay) {
+        DOM.timeLeftDisplay.textContent = 'Expiré';
+        DOM.timeLeftDisplay.className = 'badge time-badge bg-danger';
+    }
+    if (DOM.codeElement) DOM.codeElement.classList.add('expired-code');
     if (DOM.statusElement) {
         DOM.statusElement.textContent = 'EXPIRÉ';
-        DOM.statusElement.classList.remove('active', 'used');
-        DOM.statusElement.classList.add('expired');
+        DOM.statusElement.className = 'meta-item status expired';
     }
 }
 
 function updateTimeDisplay(seconds) {
+    if (!DOM.timeLeftDisplay) return;
+    // Ne pas écraser si le statut est déjà final (géré par updateRemainingTime/updateCodeDisplay)
+    if (DOM.timeLeftDisplay.textContent === 'Expiré' || DOM.timeLeftDisplay.textContent === 'Utilisé' || DOM.timeLeftDisplay.textContent === 'Inactif') {
+        return;
+    }
+
     if (seconds <= 0) {
+        // Ce cas devrait être traité par updateRemainingTime qui appelle setCodeExpiredStyles.
+        // Si on arrive ici, c'est une sécurité.
         DOM.timeLeftDisplay.textContent = 'Expiré';
         DOM.timeLeftDisplay.className = 'badge time-badge bg-danger';
     } else {
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
         DOM.timeLeftDisplay.textContent = `${mins}:${secs.toString().padStart(2, '0')} restants`;
-        DOM.timeLeftDisplay.className = seconds < 60
-            ? 'badge time-badge bg-warning text-dark' 
-            : 'badge time-badge bg-light text-dark';
-    }
-}
-
-function updateLastRefreshTime() {
-    if (DOM.updateTimeElement) {
-        DOM.updateTimeElement.textContent = new Date().toLocaleTimeString();
+        if (seconds < 60) {
+            DOM.timeLeftDisplay.className = 'badge time-badge bg-warning text-dark';
+        } else {
+            DOM.timeLeftDisplay.className = 'badge time-badge bg-light text-dark';
+        }
     }
 }
 
 function startAutoRefresh() {
     setInterval(updateRemainingTime, 1000);
-    setInterval(() => state.autoRefreshEnabled && refreshDashboard(), CONFIG.refreshInterval);
-    setInterval(updateLastRefreshTime, 60000);
-    setInterval(checkApiStatus, 30000);
-    checkApiStatus();
-}
-
-async function checkApiStatus() {
-    try {
-        const response = await fetch('/api/code', {
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            credentials: 'same-origin'
-        });
-
-        if (response.ok) {
-            state.apiFailCount = 0;
-            if (state.connectionProblem) {
-                showNotification('Connexion au serveur rétablie', 'success');
-                state.connectionProblem = false;
+    if (state.autoRefreshEnabled) {
+        state.refreshTimer = setInterval(() => {
+            if (state.autoRefreshEnabled && !document.hidden) {
+                 refreshDashboard();
             }
-        } else {
-            throw new Error('API non disponible');
+        }, CONFIG.refreshInterval);
+    }
+    setInterval(updateLastRefreshTime, 60000);
+}
+
+function getEnhancedEventDescription(log) {
+    if (log.event === 'door_open') {
+        return log.status === 'success' ? "Entrée Agent Autorisée (Site)" : `Tentative d'Entrée Échouée (${log.reason || 'raison inconnue'})`;
+    } else if (log.event === 'door_close') {
+        if (log.code_used === '_LBE_') { //
+            return "Sortie Agent Autorisée (via Bouton)";
+        } else if (log.code_used === '' && log.reason && log.reason.toLowerCase().includes('sans code d_entrée préalable valide')) {
+            return "Sortie via Bouton (Suspecte/Non Autorisée)";
+        } else if (log.status === 'success' && log.reason && log.reason.toLowerCase().includes("cycle d_accès complet")) {
+            return "Fermeture Porte (Fin du Cycle d'Accès)";
+        } else if (log.code_used && log.code_used.length > 0 && log.status === 'success') {
+            return `Fermeture Porte (Code ${log.code_used} invalidé)`;
         }
+        return "Fermeture Porte (Général)";
+    }
+    return log.event ? log.event.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Événement inconnu';
+}
+
+function getEnhancedLogIconClass(log, enhancedDescription) {
+    if (enhancedDescription.includes("Entrée Agent Autorisée")) return 'bi bi-door-open success'; // Votre icône préférée
+    if (enhancedDescription.includes("Tentative d'Entrée")) return 'bi bi-shield-lock danger';
+    if (enhancedDescription.includes("Sortie Agent Autorisée")) return 'bi bi-door-open primary'; // Votre icône préférée, couleur neutre
+    if (enhancedDescription.includes("Sortie via Bouton (Suspecte/Non Autorisée)")) return 'bi bi-exclamation-diamond-fill warning';
+    if (enhancedDescription.includes("Fermeture Porte (Fin du Cycle d'Accès)")) return 'bi bi-door-closed text-muted'; // Votre icône préférée, discrète
+    if (enhancedDescription.includes("Fermeture Porte (Code")) return 'bi bi-door-closed text-muted';
+    if (log.event === "door_close") return 'bi bi-door-closed primary';
+    return 'bi bi-activity warning';
+}
+
+function updateLogsUI(data, currentPageLogs, currentPageAlerts) {
+    const logsContainer = DOM.logEntriesContainer;
+    const paginationContainer = DOM.logPaginationContainer;
+
+    if (!logsContainer) { return; }
+    logsContainer.innerHTML = '';
+
+    if (!data.logs || data.logs.length === 0) {
+        logsContainer.innerHTML = `<div class="empty-state"><i class="bi bi-journal-x"></i><p>Aucun événement d'accès enregistré</p></div>`;
+        if (paginationContainer) paginationContainer.innerHTML = '';
+        return;
+    }
+
+    data.logs.forEach(log => {
+        const enhancedDescription = getEnhancedEventDescription(log);
+        const logIconClass = getEnhancedLogIconClass(log, enhancedDescription);
+        let accessCodeDisplay = log.code_used || 'N/A';
+        if (log.code_used === '_LBE_') accessCodeDisplay = 'Bouton (L)';
+        else if (log.code_used === '') accessCodeDisplay = 'Bouton (S)';
+
+        const logHtml = `
+            <div class="log-entry status-${log.status || 'default'}">
+                <div class="log-icon" title="${sanitizeHTML(enhancedDescription)}">
+                    <i class="${logIconClass}"></i>
+                </div>
+                <div class="log-details">
+                    <div class="log-main">
+                        <span class="log-event-text">${sanitizeHTML(enhancedDescription)}</span>
+                        <span class="log-time">${formatDateTime(log.timestamp)}</span>
+                    </div>
+                    <div class="log-secondary">
+                        <span class="log-agent" title="Agent/Source"><i class="bi bi-person-fill"></i> ${sanitizeHTML(log.agent || 'Inconnu')}</span>
+                        <span class="log-code" title="Code utilisé"><i class="bi bi-hash"></i> ${sanitizeHTML(accessCodeDisplay)}</span>
+                         <span class="log-ip" title="Adresse IP"><i class="bi bi-pc-display"></i> ${sanitizeHTML(log.ip_address || 'N/A')}</span>
+                    </div>
+                    ${log.reason && log.reason !== "null" && log.reason.trim() !== "" ? `
+                        <div class="log-reason" title="Raison/Détail">
+                            <i class="bi bi-chat-left-text"></i> ${sanitizeHTML(formatReason(log.reason))}
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+        logsContainer.innerHTML += logHtml;
+    });
+
+    if (paginationContainer && data.pagination) {
+        updatePagination(paginationContainer, data.pagination, 'logs_page', currentPageAlerts || '1');
+    } else if (paginationContainer) {
+        paginationContainer.innerHTML = '';
+    }
+}
+
+function updateAlertsUI(data, currentPageAlerts, currentPageLogs) {
+    const alertsContainer = DOM.alertEntriesContainer;
+    const paginationContainer = DOM.alertPaginationContainer;
+
+    if (!alertsContainer) { return; }
+    alertsContainer.innerHTML = '';
+
+    if (DOM.alertCounter) {
+        DOM.alertCounter.textContent = `${data.alerts ? data.alerts.length : 0} non résolue${(data.alerts && data.alerts.length !== 1) ? 's' : ''}`;
+    }
+
+    if (!data.alerts || data.alerts.length === 0) {
+        alertsContainer.innerHTML = `<div class="empty-state"><i class="bi bi-shield-check-fill"></i><p>Aucune alerte active</p></div>`;
+        if (paginationContainer) paginationContainer.innerHTML = '';
+        return;
+    }
+
+    data.alerts.forEach((alert) => {
+        const alertHtml = `
+            <div class="alert-entry severity-${alert.severity.toLowerCase()}" data-alert-index="${alert._index}">
+                <div class="alert-icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
+                <div class="alert-content">
+                    <div class="alert-header">
+                        <span class="alert-title">${sanitizeHTML(formatAlertType(alert.type))}</span>
+                        <span class="alert-severity severity-text-${alert.severity.toLowerCase()}">${sanitizeHTML(alert.severity.charAt(0).toUpperCase() + alert.severity.slice(1))}</span>
+                    </div>
+                    <p class="alert-message">${sanitizeHTML(alert.message)}</p>
+                    <div class="alert-footer">
+                        <span class="alert-time">${formatDateTime(alert.timestamp)}</span>
+                        <button class="btn btn-sm btn-resolve resolve-btn" data-alert-index="${alert._index}">
+                            <i class="bi bi-check-circle-fill"></i> Résoudre
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        alertsContainer.innerHTML += alertHtml;
+    });
+     if (paginationContainer && data.pagination) {
+        updatePagination(paginationContainer, data.pagination, 'alerts_page', currentPageLogs || '1');
+    } else if (paginationContainer) {
+        paginationContainer.innerHTML = '';
+    }
+}
+
+function updatePagination(container, pagination, pageParam, otherPageParamValue) {
+    const currentPage = parseInt(pagination.page, 10);
+    const totalPages = parseInt(pagination.pages, 10);
+    const otherPageKey = pageParam === 'logs_page' ? 'alerts_page' : 'logs_page';
+
+    if (totalPages <= 1) {
+        container.innerHTML = ''; return;
+    }
+    let paginationHtml = `<ul class="pagination justify-content-center">`;
+    paginationHtml += `<li class="page-item ${currentPage === 1 ? 'disabled' : ''}"><a class="page-link" href="?${pageParam}=${currentPage - 1}&${otherPageKey}=${otherPageParamValue}" aria-label="Précédent"><i class="bi bi-chevron-left"></i></a></li>`;
+
+    const MAX_PAGES_SHOWN = 3;
+    let startLoop = Math.max(1, currentPage - Math.floor(MAX_PAGES_SHOWN / 2));
+    let endLoop = Math.min(totalPages, startLoop + MAX_PAGES_SHOWN - 1);
+
+    if (endLoop === totalPages && (endLoop - startLoop + 1) < MAX_PAGES_SHOWN ) {
+        startLoop = Math.max(1, totalPages - MAX_PAGES_SHOWN + 1);
+    }
+     if (startLoop === 1 && totalPages > MAX_PAGES_SHOWN) {
+         endLoop = MAX_PAGES_SHOWN;
+    }
+
+    if (startLoop > 1) {
+        paginationHtml += `<li class="page-item"><a class="page-link" href="?${pageParam}=1&${otherPageKey}=${otherPageParamValue}">1</a></li>`;
+        if (startLoop > 2) paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+    }
+
+    for (let i = startLoop; i <= endLoop; i++) {
+        paginationHtml += `<li class="page-item ${i === currentPage ? 'active' : ''}"><a class="page-link" href="?${pageParam}=${i}&${otherPageKey}=${otherPageParamValue}">${i}</a></li>`;
+    }
+
+    if (endLoop < totalPages) {
+        if (endLoop < totalPages - 1) paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        paginationHtml += `<li class="page-item"><a class="page-link" href="?${pageParam}=${totalPages}&${otherPageKey}=${otherPageParamValue}">${totalPages}</a></li>`;
+    }
+    paginationHtml += `<li class="page-item ${currentPage === totalPages ? 'disabled' : ''}"><a class="page-link" href="?${pageParam}=${currentPage + 1}&${otherPageKey}=${otherPageParamValue}" aria-label="Suivant"><i class="bi bi-chevron-right"></i></a></li>`;
+    paginationHtml += `</ul>`;
+    container.innerHTML = paginationHtml;
+}
+
+function setupPagination(cardSelector, pageParam, loadFunction) {
+    const card = document.querySelector(cardSelector);
+    if (!card) return;
+    const paginationContainer = card.querySelector('.pagination-container');
+    if (!paginationContainer) return;
+
+    paginationContainer.addEventListener('click', function (e) {
+        const targetLink = e.target.closest('a.page-link');
+        if (!targetLink || targetLink.closest('.page-item.disabled') || targetLink.closest('.page-item.active')) {
+             if (targetLink && (targetLink.closest('.page-item.disabled') || targetLink.closest('.page-item.active'))) e.preventDefault();
+            return;
+        }
+        e.preventDefault();
+        const href = targetLink.getAttribute('href');
+        if (!href || href === '#') return;
+
+        try {
+            const url = new URL(href, window.location.origin);
+            const page = url.searchParams.get(pageParam);
+            const currentUrlParams = new URLSearchParams(window.location.search);
+            const otherPageKey = pageParam === 'logs_page' ? 'alerts_page' : 'logs_page';
+            const otherPageValue = currentUrlParams.get(otherPageKey) || '1';
+
+            if (page) {
+                loadFunction(page, otherPageValue);
+                const newUrl = new URL(window.location);
+                newUrl.searchParams.set(pageParam, page);
+                newUrl.searchParams.set(otherPageKey, otherPageValue);
+                window.history.pushState({path: newUrl.toString()}, '', newUrl.toString());
+                const entriesContainer = card.querySelector('.log-entries, .alert-entries');
+                if(entriesContainer) { entriesContainer.style.opacity = '0.5'; setTimeout(() => { entriesContainer.style.opacity = '1'; }, 300); }
+            }
+        } catch (error) { console.error("Erreur de pagination:", error); }
+    });
+}
+
+function loadLogs(page, alertsPageValue) {
+    alertsPageValue = alertsPageValue || new URLSearchParams(window.location.search).get('alerts_page') || '1';
+    fetchData(`/api/logs?page=${page}&per_page=5`)
+        .then(data => updateLogsUI(data, page, alertsPageValue))
+        .catch(error => {
+            console.error('Erreur chargement logs:', error);
+            if(DOM.logEntriesContainer) DOM.logEntriesContainer.innerHTML = `<div class="empty-state text-danger"><i class="bi bi-wifi-off"></i><p>Erreur chargement logs.</p></div>`;
+            if(DOM.logPaginationContainer) DOM.logPaginationContainer.innerHTML = '';
+        });
+}
+
+function loadAlerts(page, logsPageValue) {
+    logsPageValue = logsPageValue || new URLSearchParams(window.location.search).get('logs_page') || '1';
+    fetchData(`/api/alerts?page=${page}&per_page=5&show_resolved=false`)
+        .then(data => updateAlertsUI(data, page, logsPageValue))
+        .catch(error => {
+            console.error('Erreur chargement alertes:', error);
+            if(DOM.alertEntriesContainer) DOM.alertEntriesContainer.innerHTML = `<div class="empty-state text-danger"><i class="bi bi-wifi-off"></i><p>Erreur chargement alertes.</p></div>`;
+            if(DOM.alertPaginationContainer) DOM.alertPaginationContainer.innerHTML = '';
+        });
+}
+
+async function handleAlertResolve(button) {
+    const alertIndex = button.dataset.alertIndex;
+    if (alertIndex === undefined || alertIndex === null) {
+        showNotification("Erreur : Index d'alerte manquant.", "error"); return;
+    }
+    const alertItem = button.closest('.alert-entry');
+    if (!alertItem) return;
+
+    button.disabled = true;
+    const originalHtml = button.innerHTML;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+
+    try {
+        const response = await fetch(`/api/alert/${alertIndex}/resolve`, { //
+            method: 'POST',
+            headers: getRequestHeaders(),
+            credentials: 'same-origin',
+            signal: AbortSignal.timeout(CONFIG.apiTimeout)
+        });
+        if (!response.ok) throw await handleApiError(response);
+        showNotification(`Alerte marquée comme résolue.`, 'success');
+        alertItem.style.transition = 'opacity 0.3s ease, transform 0.3s ease, max-height 0.3s ease .1s, padding 0.3s ease .1s, margin 0.3s ease .1s, border 0.3s ease .1s';
+        alertItem.style.opacity = '0'; alertItem.style.transform = 'translateX(20px)';
+        alertItem.style.maxHeight = '0px'; alertItem.style.paddingTop = '0'; alertItem.style.paddingBottom = '0';
+        alertItem.style.marginTop = '0'; alertItem.style.marginBottom = '0'; alertItem.style.borderWidth = '0';
+        setTimeout(() => {
+            alertItem.remove();
+            const currentUrlParams = new URLSearchParams(window.location.search);
+            loadAlerts(currentUrlParams.get('alerts_page') || '1', currentUrlParams.get('logs_page') || '1');
+        }, 400);
+    } catch (error) {
+        console.error('Erreur résolution alerte:', error);
+        showNotification(error.message || 'Erreur lors de la résolution.', 'error');
+        button.innerHTML = originalHtml; button.disabled = false;
+    }
+}
+
+function updateLastRefreshTime() {
+    if (DOM.updateTimeElement) {
+        DOM.updateTimeElement.textContent = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+}
+function getRequestHeaders() { return { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }; }
+async function fetchData(endpoint) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CONFIG.apiTimeout);
+    try {
+        const response = await fetch(endpoint, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+            if(response.status === 0 || response.type === 'opaque' || response.type === 'error') throw new Error('Erreur réseau ou CORS');
+            const errorText = await response.text().catch(() => 'Réponse d_erreur non lisible');
+            console.error("Erreur API:", response.status, errorText);
+            throw new Error(`Erreur HTTP: ${response.status} - ${errorText.substring(0,100)}`);
+        }
+        return await response.json();
+    } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            console.warn(`Timeout pour ${endpoint}`);
+            throw new Error(`Timeout de la requête API (${endpoint.split('?')[0]})`);
+        }
+        console.error(`Erreur Fetch pour ${endpoint}:`, error);
+        throw error;
+    }
+}
+async function handleApiError(response) {
+    try {
+        const errorData = await response.json();
+        return new Error(errorData.error || errorData.message || `Échec de la requête API (${response.status})`);
     } catch {
-        state.apiFailCount++;
-        handleApiFailure();
+        return new Error(`Erreur serveur ou réponse non JSON (${response.status})`);
     }
 }
+function isCodeValid(code) {
+    if (!code?.valid_until) return false;
+    try { return new Date(code.valid_until) > new Date(); }
+    catch (e) { console.error('Erreur vérification validité code:', e, code.valid_until); return false; }
+}
+function formatReason(reason) { return reason ? reason.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : ''; }
+function formatAlertType(type) {  return type ? type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : ''; }
+function sanitizeHTML(str) { if (str === null || str === undefined) return ''; const temp = document.createElement('div'); temp.textContent = String(str); return temp.innerHTML; }
 
-function handleApiFailure() {
-    if (state.apiFailCount >= CONFIG.maxRetries && !state.connectionProblem) {
-        showNotification('Problème de connexion avec le serveur. Essayez de rafraîchir la page.', 'error');
-        state.connectionProblem = true;
-    }
+function showNotification(message, type = 'info', duration = 4000) {
+    message = sanitizeHTML(message);
+    const container = document.getElementById('toast-container') || createToastContainer();
+    const toast = document.createElement('div');
+    let bgColorClass = 'bg-primary'; let textColorClass = 'text-white';
+    if (type === 'success') bgColorClass = 'bg-success';
+    else if (type === 'warning') { bgColorClass = 'bg-warning'; textColorClass = 'text-dark';}
+    else if (type === 'error') bgColorClass = 'bg-danger';
+    else if (type === 'info') { bgColorClass = 'bg-info'; textColorClass = 'text-dark'; }
+
+    toast.className = `toast align-items-center ${textColorClass} ${bgColorClass} border-0 shadow-lg`; // Ajout de shadow-lg
+    toast.setAttribute('role', 'alert'); toast.setAttribute('aria-live', 'assertive'); toast.setAttribute('aria-atomic', 'true');
+
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">${message.replace(/\n/g, '<br>')}</div>
+            <button type="button" class="btn-close ${textColorClass === 'text-white' ? 'btn-close-white' : ''} me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    `;
+    container.appendChild(toast);
+    const bsToast = new bootstrap.Toast(toast, { delay: duration, autohide: true });
+    try { bsToast.show(); } catch(e) { console.error("Erreur affichage toast:", e); toast.remove(); }
+    toast.addEventListener('hidden.bs.toast', () => toast.remove());
 }
 
+function createToastContainer() {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'position-fixed bottom-0 end-0 p-3';
+        container.style.zIndex = "1100";
+        document.body.appendChild(container);
+    }
+    return container;
+}
+
+function resetGenerateButton(isError = false) {
+     if (!DOM.generateBtn) return;
+    DOM.generateBtn.disabled = false;
+    DOM.generateBtn.innerHTML = isError
+        ? '<i class="bi bi-exclamation-triangle-fill me-1"></i> Réessayer'
+        : '<i class="bi bi-plus-circle-fill"></i> Générer un Nouveau Code'; // Icône remplie
+}
+function formatDateTime(timestamp) {
+    if (!timestamp) return 'N/A';
+    try {
+        const date = new Date(timestamp);
+        if (isNaN(date.getTime())) { return 'Date invalide'; }
+        return date.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch (e) { console.error("Erreur de formatage de date:", e, "pour le timestamp:", timestamp); return 'Erreur date'; }
+}
 function handleFooterLayout() {
     const footer = document.querySelector('.dashboard-footer');
     if (footer) {
         footer.style.padding = window.innerWidth < 768 ? '0.8rem 0' : '1rem 0';
     }
 }
-
 window.addEventListener('resize', handleFooterLayout);
-
-// Fonctions utilitaires restantes
-function getLogIcon(log) {
-    if (log.event === "door_open") {
-        return log.status === "success"
-            ? '<i class="bi bi-door-open success"></i>' 
-            : '<i class="bi bi-door-closed danger"></i>';
-    } else if (log.event === "door_close") {
-        return '<i class="bi bi-door-closed primary"></i>';
-    }
-    return '<i class="bi bi-activity warning"></i>';
-}
-
-function getLogEventText(log) {
-    if (log.event === "door_open") return log.status === "success" ? 'Ouverture' : 'Tentative échouée';
-    if (log.event === "door_close") return 'Fermeture';
-    return log.event;
-}
-
-function formatTimestamp(timestamp) {
-    if (!timestamp) return '';
-    try {
-        return new Date(timestamp).toLocaleString();
-    } catch {
-        return timestamp;
-    }
-}
-
-function formatReason(reason) {
-    return reason ? reason.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
-}
-
-function formatAlertType(type) {
-    return type ? type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
-}
-
-function sanitizeHTML(str) {
-    if (!str) return '';
-    const temp = document.createElement('div');
-    temp.textContent = str;
-    return temp.innerHTML;
-}
-
-function showNotification(message, type = 'success') {
-    message = sanitizeHTML(message);
-    const notification = document.createElement('div');
-    notification.className = `toast align-items-center text-white bg-${
-        type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'danger'
-    } position-fixed bottom-0 end-0 m-3`;
-    notification.setAttribute('role', 'alert');
-    notification.innerHTML = `
-        <div class="d-flex">
-            <div class="toast-body">${message.replace(/\n/g, '<br>')}</div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-        </div>
-    `;
-    document.body.appendChild(notification);
-    setTimeout(() => {
-        notification.classList.add('show');
-        setTimeout(() => {
-            notification.classList.remove('show');
-            setTimeout(() => notification.remove(), 500);
-        }, 3000);
-    }, 100);
-}
-
-function resetGenerateButton(isError = false) {
-    if (!DOM.generateBtn) return;
-    DOM.generateBtn.disabled = false;
-    DOM.generateBtn.innerHTML = isError
-        ? '<i class="bi bi-key-fill me-2"></i>Réessayer' 
-        : '<i class="bi bi-plus-circle"></i> Générer un code';
-}
-
-document.addEventListener('DOMContentLoaded', function () {
-    // Intercepter les clics sur les liens de pagination
-    setupPagination('.history-card', 'logs_page', loadLogs);
-    setupPagination('.alerts-card', 'alerts_page', loadAlerts);
-
-    function setupPagination(cardSelector, pageParam, loadFunction) {
-        const card = document.querySelector(cardSelector);
-        if (!card) return;
-
-        // Attacher les écouteurs d'événements aux liens de pagination
-        card.addEventListener('click', function (e) {
-            // Vérifier si c'est un lien de pagination qui a été cliqué
-            const target = e.target.closest('.page-link');
-            if (!target) return;
-
-            e.preventDefault(); // Empêcher le comportement par défaut
-
-            // Extraire le numéro de page de l'URL
-            const href = target.getAttribute('href');
-            const url = new URL(href, window.location.origin);
-            const page = url.searchParams.get(pageParam);
-
-            if (page) {
-                // Charger les nouvelles données
-                loadFunction(page);
-
-                // Mettre à jour l'URL sans recharger la page
-                const newUrl = new URL(window.location);
-                newUrl.searchParams.set(pageParam, page);
-                window.history.pushState({}, '', newUrl);
-
-                // Ajouter une classe pour l'effet de transition
-                card.querySelector('.card-body').classList.add('refreshing');
-                setTimeout(() => {
-                    card.querySelector('.card-body').classList.remove('refreshing');
-                }, 300);
-            }
-        });
-    }
-
-    function loadLogs(page) {
-        fetch(`/api/logs?page=${page}&per_page=5`)
-            .then(response => response.json())
-            .then(data => {
-                updateLogsUI(data);
-            })
-            .catch(error => console.error('Erreur lors du chargement des logs:', error));
-    }
-
-    function loadAlerts(page) {
-        fetch(`/api/alerts?page=${page}&per_page=5&show_resolved=false`)
-            .then(response => response.json())
-            .then(data => {
-                updateAlertsUI(data);
-            })
-            .catch(error => console.error('Erreur lors du chargement des alertes:', error));
-    }
-
-    function updateLogsUI(data) {
-        const logsContainer = document.querySelector('.history-card .log-entries');
-        const paginationContainer = document.querySelector('.history-card .pagination');
-
-        if (!logsContainer) return;
-
-        // Effacer le contenu existant
-        logsContainer.innerHTML = '';
-
-        // Si aucun log, afficher l'état vide
-        if (!data.logs || data.logs.length === 0) {
-            logsContainer.innerHTML = `
-                <div class="empty-state">
-                    <i class="bi bi-journal"></i>
-                    <p>Aucun événement enregistré</p>
-                </div>
-            `;
-            return;
-        }
-
-        // Générer le HTML pour chaque log
-        data.logs.forEach(log => {
-            let iconClass = 'bi-activity warning';
-            if (log.event === 'door_open') {
-                iconClass = log.status === 'success' ? 'bi-door-open success' : 'bi-door-closed danger';
-            } else if (log.event === 'door_close') {
-                iconClass = 'bi-door-closed primary';
-            }
-
-            const logHtml = `
-                <div class="log-entry ${log.status || ''}">
-                    <div class="log-icon">
-                        <i class="bi ${iconClass}"></i>
-                    </div>
-                    <div class="log-details">
-                        <div class="log-main">
-                            <span class="log-event">
-                                ${log.event === 'door_open'
-                ? (log.status === 'success' ? 'Ouverture' : 'Tentative échouée')
-                : log.event === 'door_close' ? 'Fermeture' : log.event}
-                            </span>
-                            <span class="log-time">${formatDateTime(log.timestamp)}</span>
-                        </div>
-                        <div class="log-secondary">
-                            <span class="log-agent"><i class="bi bi-person"></i> ${log.agent || 'Inconnu'}</span>
-                            ${log.code_used ? `<span class="log-code"><i class="bi bi-key"></i> ${log.code_used}</span>` : ''}
-                        </div>
-                        ${log.reason ? `
-                            <div class="log-reason">
-                                <i class="bi bi-info-circle"></i> ${log.reason.replace(/_/g, ' ').charAt(0).toUpperCase() + log.reason.replace(/_/g, ' ').slice(1)}
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-            `;
-            logsContainer.innerHTML += logHtml;
-        });
-
-        // Mettre à jour la pagination
-        if (paginationContainer && data.pagination) {
-            updatePagination(paginationContainer, data.pagination, 'logs_page');
-        }
-    }
-
-    function updateAlertsUI(data) {
-        const alertsContainer = document.querySelector('.alerts-card .alert-entries');
-        const paginationContainer = document.querySelector('.alerts-card .pagination');
-
-        if (!alertsContainer) return;
-
-        // Effacer le contenu existant
-        alertsContainer.innerHTML = '';
-
-        // Si aucune alerte, afficher l'état vide
-        if (!data.alerts || data.alerts.length === 0) {
-            alertsContainer.innerHTML = `
-                <div class="empty-state">
-                    <i class="bi bi-check-circle"></i>
-                    <p>Aucune alerte active</p>
-                </div>
-            `;
-            return;
-        }
-
-        // Générer le HTML pour chaque alerte
-        data.alerts.forEach((alert, index) => {
-            const alertHtml = `
-                <div class="alert-entry severity-${alert.severity}" data-alert-index="${alert._index !== undefined ? alert._index : index}">
-                    <div class="alert-icon">
-                        <i class="bi bi-exclamation-triangle-fill"></i>
-                    </div>
-                    <div class="alert-content">
-                        <div class="alert-header">
-                            <span class="alert-title">${alert.type.replace(/_/g, ' ').charAt(0).toUpperCase() + alert.type.replace(/_/g, ' ').slice(1)}</span>
-                            <span class="alert-severity">${alert.severity.charAt(0).toUpperCase() + alert.severity.slice(1)}</span>
-                        </div>
-                        <p class="alert-message">${alert.message}</p>
-                        <div class="alert-footer">
-                            <span class="alert-time">${formatDateTime(alert.timestamp)}</span>
-                            <button class="btn btn-resolve resolve-btn" data-alert-index="${alert._index !== undefined ? alert._index : index}">
-                                <i class="bi bi-check-lg"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `;
-            alertsContainer.innerHTML += alertHtml;
-        });
-
-        // Réattacher les événements pour les boutons de résolution
-        document.querySelectorAll('.resolve-btn').forEach(btn => {
-            btn.addEventListener('click', handleAlertResolve);
-        });
-
-        // Mettre à jour la pagination
-        if (paginationContainer && data.pagination) {
-            updatePagination(paginationContainer, data.pagination, 'alerts_page');
-        }
-    }
-
-    function updatePagination(container, pagination, pageParam) {
-        const currentPage = pagination.page;
-        const totalPages = pagination.pages;
-
-        if (totalPages <= 1) {
-            container.style.display = 'none';
-            return;
-        }
-
-        container.style.display = 'flex';
-
-        // Créer la structure de pagination
-        let paginationHtml = `
-            <ul class="pagination">
-                <li class="page-item ${currentPage <= 1 ? 'disabled' : ''}">
-                    <a class="page-link" href="?${pageParam}=${currentPage - 1}" aria-label="Précédent">
-                        <i class="bi bi-chevron-left"></i>
-                    </a>
-                </li>
-        `;
-
-        // Ajouter les numéros de page
-        const startPage = Math.max(1, currentPage - 2);
-        const endPage = Math.min(totalPages, currentPage + 2);
-
-        for (let i = startPage; i <= endPage; i++) {
-            paginationHtml += `
-                <li class="page-item ${i === currentPage ? 'active' : ''}">
-                    <a class="page-link" href="?${pageParam}=${i}">${i}</a>
-                </li>
-            `;
-        }
-
-        paginationHtml += `
-                <li class="page-item ${currentPage >= totalPages ? 'disabled' : ''}">
-                    <a class="page-link" href="?${pageParam}=${currentPage + 1}" aria-label="Suivant">
-                        <i class="bi bi-chevron-right"></i>
-                    </a>
-                </li>
-            </ul>
-        `;
-
-        container.innerHTML = paginationHtml;
-    }
-
-    function handleAlertResolve(e) {
-        const alertIndex = e.currentTarget.dataset.alertIndex;
-
-        fetch(`/api/alert/${alertIndex}/resolve`, {
-            method: 'POST'
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'alert_resolved') {
-                    // Recharger les alertes
-                    const currentPage = new URL(window.location).searchParams.get('alerts_page') || '1';
-                    loadAlerts(currentPage);
-                }
-            })
-            .catch(error => console.error('Erreur lors de la résolution de l\'alerte:', error));
-    }
-
-    function formatDateTime(timestamp) {
-        if (!timestamp) return '';
-
-        const date = new Date(timestamp);
-        return date.toLocaleString('fr-FR', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-        });
-    }
-});
-
