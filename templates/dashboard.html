@@ -22,11 +22,11 @@
             <div class="header-info">
                 <div class="system-status">
                     <span class="status-indicator active"></span>
-                    <span>Système Opérationnel</span>
+                    <span>Sistema funzionante</span>
                 </div>
                 <div class="last-update">
                     <i class="bi bi-info-circle me-1" title="Heure du dernier rafraîchissement des données affichées"></i>
-                    <span>Actualisé à <strong id="update-time">{{ now|datetimeformat('%H:%M:%S') }}</strong></span>
+                    <span>Aggiornato a <strong id="update-time">{{ now|datetimeformat('%H:%M:%S') }}</strong></span>
                     <button id="refresh-btn" class="btn btn-icon" title="Rafraîchir les données">
                         <i class="bi bi-arrow-clockwise"></i>
                     </button>
@@ -39,34 +39,34 @@
         <div class="left-column">
             <div class="card access-card">
                 <div class="card-header">
-                    <h2><i class="bi bi-key-fill"></i> Code d'Accès</h2>
-                    <span class="badge time-badge bg-secondary" id="time-left">Chargement...</span>
+                    <h2><i class="bi bi-key-fill"></i> Codice di accesso</h2>
+                    <span class="badge time-badge bg-secondary" id="time-left">Caricamento...</span>
                 </div>
                 <div class="card-body">
                     <div class="code-section">
                         <div class="code-display" title="Code d'accès actuel">----</div>
                         <div class="code-meta">
                             <span class="meta-item validity">
-                                <i class="bi bi-calendar-check"></i> <span id="valid-until-text">Valide jusqu'à : N/A</span>
+                                <i class="bi bi-calendar-check"></i> <span id="valid-until-text">Valido fino a: N/D</span>
                             </span>
                             <span class="meta-item status">
-                                <i class="bi bi-activity"></i> <span id="code-status-text">AUCUN CODE</span>
+                                <i class="bi bi-activity"></i> <span id="code-status-text">NESSUN CODICE</span>
                             </span>
                         </div>
                     </div>
                     <button class="btn btn-generate" id="generate-btn">
-                        <i class="bi bi-plus-circle-fill"></i> Générer un Nouveau Code
+                        <i class="bi bi-plus-circle-fill"></i> Generare un nuovo codice
                     </button>
                 </div>
             </div>
 
             <div class="card security-card">
                 <div class="card-header">
-                    <h2><i class="bi bi-shield-shaded"></i> Sécurité</h2>
+                    <h2><i class="bi bi-shield-shaded"></i> Sicurezza</h2>
                 </div>
                 <div class="card-body">
                     <div class="security-metric">
-                        <h3>Tentatives Échouées</h3>
+                        <h3>Tentativi falliti</h3>
                         <div class="attempts-display">
                             <span class="current-attempts" id="failed-attempts-count">0</span>
                             <span class="separator">/</span>
@@ -79,8 +79,8 @@
                         </div>
                     </div>
                     <div class="security-status">
-                        <span class="status-label">Niveau de sécurité :</span>
-                        <span class="status-value success" id="security-level-text">Élevé</span>
+                        <span class="status-label">Livello di sicurezza:</span>
+                        <span class="status-value success" id="security-level-text">Alto</span>
                     </div>
                 </div>
             </div>
@@ -89,14 +89,14 @@
         <div class="right-column">
             <div class="card history-card">
                 <div class="card-header">
-                    <h2><i class="bi bi-list-ul"></i> Historique des Accès</h2>
-                    <span class="badge counter-badge bg-secondary" id="total-logs-badge">0 événements</span>
+                    <h2><i class="bi bi-list-ul"></i> Storico degli accessi</h2>
+                    <span class="badge counter-badge bg-secondary" id="total-logs-badge">0 eventi</span>
                 </div>
                 <div class="card-body">
                     <div class="log-entries">
                         <div class="empty-state">
                             <i class="bi bi-journal-x"></i>
-                            <p>Aucun événement d'accès à afficher</p>
+                            <p>Nessun evento di accesso da visualizzare</p>
                         </div>
                     </div>
                     <div class="pagination-container mt-3">
@@ -108,14 +108,14 @@
 
             <div class="card alerts-card">
                 <div class="card-header">
-                    <h2><i class="bi bi-exclamation-triangle-fill"></i> Alertes</h2>
-                    <span class="badge counter-badge alert" id="total-alerts-badge">0 non résolues</span>
+                    <h2><i class="bi bi-exclamation-triangle-fill"></i> Allarmi</h2>
+                    <span class="badge counter-badge alert" id="total-alerts-badge">0 non risolti</span>
                 </div>
                 <div class="card-body">
                     <div class="alert-entries">
                         <div class="empty-state">
                             <i class="bi bi-shield-check-fill"></i>
-                            <p>Aucune alerte active</p>
+                            <p>Nessun allarme attivo</p>
                         </div>
                     </div>
                      <div class="pagination-container mt-3">

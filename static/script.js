@@ -57,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     setupPagination('.history-card', 'logs_page', loadLogs);
     setupPagination('.alerts-card', 'alerts_page', loadAlerts);
-    console.log("SmartCadenas Dashboard Initialisé.");
+    console.log("Dashboard di SmartLock inizializzato.");
 });
 
 function setupEventHandlers() {
@@ -78,7 +78,7 @@ async function manualRefresh() {
     if (!DOM.refreshBtn || DOM.refreshBtn.disabled) return;
     const now = Date.now();
     if (now - state.lastRefreshTime < CONFIG.minRefreshDelay && !state.isRefreshing) {
-        showNotification('Merci de patienter avant de rafraîchir à nouveau.', 'warning');
+        showNotification('Si prega di attendere prima di aggiornare nuovamente.', 'warning');
         return;
     }
     state.lastRefreshTime = now;
@@ -87,7 +87,7 @@ async function manualRefresh() {
     try {
         await refreshDashboard(true); // Forcer le rafraîchissement
     } catch (error) {
-        showNotification("Échec du rafraîchissement manuel.", "error");
+        showNotification("Errore nell'aggiornamento manuale.", "error");
     } finally {
         if (DOM.refreshBtn) { // S'assurer que l'élément existe encore
             DOM.refreshBtn.classList.remove('rotating');
@@ -113,7 +113,7 @@ async function generateNewCode() {
         if (response.ok) {
             const apiData = await response.json(); // API renvoie { code, valid_until, generated_at }
             if (!apiData.code || !apiData.valid_until) {
-                throw new Error('Réponse API invalide pour la génération de code.');
+                throw new Error('Risposta API non valida per la generazione del codice.');
             }
 
             state.currentCode = {
@@ -125,7 +125,7 @@ async function generateNewCode() {
             };
 
             const validTime = new Date(state.currentCode.valid_until).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            showNotification(`Nouveau code généré: ${sanitizeHTML(state.currentCode.value)}. Valide jusqu'à ${sanitizeHTML(validTime)}`, 'success');
+            showNotification(`Nuovo codice generato: ${sanitizeHTML(state.currentCode.value)}. Valido fino a ${sanitizeHTML(validTime)}`, 'success');
 
             updateCodeDisplay(); // Mettre à jour l'UI immédiatement avec le nouveau state.currentCode
                                  // updateRemainingTime() sera appelé à l'intérieur de updateCodeDisplay
@@ -134,8 +134,8 @@ async function generateNewCode() {
             throw await handleApiError(response);
         }
     } catch (error) {
-        console.error('Erreur génération code:', error);
-        showNotification(error.message || 'Erreur de connexion au serveur lors de la génération.', 'error');
+        console.error('Errore generazione codice:', error);
+        showNotification(error.message || 'Errore di connessione al server durante la generazione.', 'error');
     } finally {
         resetGenerateButton();
     }
@@ -181,12 +181,12 @@ async function refreshDashboard(forceRefresh = false) {
         updateLastRefreshTime();
         state.apiFailCount = 0;
         if (state.connectionProblem) {
-            showNotification('Connexion au serveur rétablie.', 'success');
+            showNotification('Connessione al server ripristinata.', 'success');
             state.connectionProblem = false;
         }
         return true;
     } catch (error) {
-        console.error('Refresh Dashboard failed:', error);
+        console.error('Aggiornamento della dashboard fallito:', error);
         state.apiFailCount++;
         handleApiFailure(); // Gère la notification d'erreur si nécessaire
         state.currentCode = null; // En cas d'erreur majeure, considérer qu'il n'y a pas de code
@@ -210,11 +210,11 @@ function updateCodeDisplay() {
     if (!codeToDisplay || !codeToDisplay.value) {
         DOM.codeElement.textContent = "----";
         DOM.codeElement.className = 'code-display expired-code'; // Style "pas de code"
-        DOM.statusElement.textContent = 'AUCUN CODE';
+        DOM.statusElement.textContent = 'NESSUN CODICE';
         DOM.statusElement.className = 'meta-item status expired'; // Style pour "aucun code"
-        DOM.timeLeftDisplay.textContent = 'Inactif';
+        DOM.timeLeftDisplay.textContent = 'Inattivo';
         DOM.timeLeftDisplay.className = 'badge time-badge bg-secondary';
-        DOM.validUntilElement.textContent = 'N/A';
+        DOM.validUntilElement.textContent = 'N/D';
         return;
     }
 
@@ -225,29 +225,29 @@ function updateCodeDisplay() {
 
     if (isActuallyUsed) {
         DOM.codeElement.className = 'code-display expired-code'; // Style "utilisé" (peut être comme expiré)
-        DOM.statusElement.textContent = 'UTILISÉ';
+        DOM.statusElement.textContent = 'UTILIZZATO';
         DOM.statusElement.className = 'meta-item status used'; // Classe CSS 'used'
-        DOM.timeLeftDisplay.textContent = 'Utilisé';
+        DOM.timeLeftDisplay.textContent = 'Utilizzato';
         DOM.timeLeftDisplay.className = 'badge time-badge bg-info text-dark'; // Style pour "utilisé"
     } else if (!isStillValidDate) {
         DOM.codeElement.className = 'code-display expired-code';
-        DOM.statusElement.textContent = 'EXPIRÉ';
+        DOM.statusElement.textContent = 'SCADUTO';
         DOM.statusElement.className = 'meta-item status expired';
-        DOM.timeLeftDisplay.textContent = 'Expiré';
+        DOM.timeLeftDisplay.textContent = 'Scaduto';
         DOM.timeLeftDisplay.className = 'badge time-badge bg-danger';
     } else { // Code VALIDE et NON UTILISÉ
         DOM.codeElement.className = 'code-display'; // Style normal
-        DOM.statusElement.textContent = 'ACTIF';
+        DOM.statusElement.textContent = 'ATTIVO';
         DOM.statusElement.className = 'meta-item status active'; // Style vert pour actif
         // Le compte à rebours est géré par updateRemainingTime
     }
 
     if (codeToDisplay.valid_until) {
         try {
-            DOM.validUntilElement.textContent = `Valide jusqu'à ${new Date(codeToDisplay.valid_until).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+            DOM.validUntilElement.textContent = `Valido fino a ${new Date(codeToDisplay.valid_until).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
         } catch (e) { DOM.validUntilElement.textContent = 'Erreur date'; }
     } else {
-        DOM.validUntilElement.textContent = 'N/A';
+        DOM.validUntilElement.textContent = 'N/D';
     }
     // updateRemainingTime est appelé par l'intervalle, mais un appel ici assure la synchro immédiate
     updateRemainingTime();
@@ -258,16 +258,16 @@ function updateRemainingTime() {
     const code = state.currentCode;
 
     if (!code || !code.value || !code.valid_until) {
-        if (DOM.timeLeftDisplay.textContent !== 'Inactif') {
-             DOM.timeLeftDisplay.textContent = 'Inactif';
+        if (DOM.timeLeftDisplay.textContent !== 'Inattivo') {
+             DOM.timeLeftDisplay.textContent = 'Inattivo';
              DOM.timeLeftDisplay.className = 'badge time-badge bg-secondary';
         }
         return;
     }
 
     if (code.used) {
-        if (DOM.timeLeftDisplay.textContent !== 'Utilisé') {
-            DOM.timeLeftDisplay.textContent = 'Utilisé';
+        if (DOM.timeLeftDisplay.textContent !== 'Utilizzato') {
+            DOM.timeLeftDisplay.textContent = 'Utilizzato';
             DOM.timeLeftDisplay.className = 'badge time-badge bg-info text-dark';
         }
         return;
@@ -290,19 +290,19 @@ function updateRemainingTime() {
         updateTimeDisplay(diffInSeconds); // Met à jour le texte et la couleur du badge
     } catch (error) {
         console.error('Erreur dans updateRemainingTime:', error);
-        DOM.timeLeftDisplay.textContent = 'Erreur';
+        DOM.timeLeftDisplay.textContent = 'Errore';
         DOM.timeLeftDisplay.className = 'badge time-badge bg-danger';
     }
 }
 
 function setCodeExpiredStyles() {
     if (DOM.timeLeftDisplay) {
-        DOM.timeLeftDisplay.textContent = 'Expiré';
+        DOM.timeLeftDisplay.textContent = 'Scaduto';
         DOM.timeLeftDisplay.className = 'badge time-badge bg-danger';
     }
     if (DOM.codeElement) DOM.codeElement.classList.add('expired-code');
     if (DOM.statusElement) {
-        DOM.statusElement.textContent = 'EXPIRÉ';
+        DOM.statusElement.textContent = 'SCADUTO';
         DOM.statusElement.className = 'meta-item status expired';
     }
 }
@@ -310,19 +310,19 @@ function setCodeExpiredStyles() {
 function updateTimeDisplay(seconds) {
     if (!DOM.timeLeftDisplay) return;
     // Ne pas écraser si le statut est déjà final (géré par updateRemainingTime/updateCodeDisplay)
-    if (DOM.timeLeftDisplay.textContent === 'Expiré' || DOM.timeLeftDisplay.textContent === 'Utilisé' || DOM.timeLeftDisplay.textContent === 'Inactif') {
+    if (DOM.timeLeftDisplay.textContent === 'Scaduto' || DOM.timeLeftDisplay.textContent === 'Utilizzato' || DOM.timeLeftDisplay.textContent === 'Inattivo') {
         return;
     }
 
     if (seconds <= 0) {
         // Ce cas devrait être traité par updateRemainingTime qui appelle setCodeExpiredStyles.
         // Si on arrive ici, c'est une sécurité.
-        DOM.timeLeftDisplay.textContent = 'Expiré';
+        DOM.timeLeftDisplay.textContent = 'Scaduto';
         DOM.timeLeftDisplay.className = 'badge time-badge bg-danger';
     } else {
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
-        DOM.timeLeftDisplay.textContent = `${mins}:${secs.toString().padStart(2, '0')} restants`;
+        DOM.timeLeftDisplay.textContent = `${mins}:${secs.toString().padStart(2, '0')} rimanenti`;
         if (seconds < 60) {
             DOM.timeLeftDisplay.className = 'badge time-badge bg-warning text-dark';
         } else {
@@ -345,29 +345,29 @@ function startAutoRefresh() {
 
 function getEnhancedEventDescription(log) {
     if (log.event === 'door_open') {
-        return log.status === 'success' ? "Entrée Agent Autorisée (Site)" : `Tentative d'Entrée Échouée (${log.reason || 'raison inconnue'})`;
+        return log.status === 'success' ? "Ingresso agente autorizzato (sito)" : `Tentativo di ingresso fallito (${log.reason || 'motivo sconosciuto'})`;
     } else if (log.event === 'door_close') {
         if (log.code_used === '_LBE_') { //
-            return "Sortie Agent Autorisée (via Bouton)";
-        } else if (log.code_used === '' && log.reason && log.reason.toLowerCase().includes('sans code d_entrée préalable valide')) {
-            return "Sortie via Bouton (Suspecte/Non Autorisée)";
+            return "Uscita agente autorizzata (tramite pulsante)";
+        } else if (log.code_used === '' && log.reason && log.reason.toLowerCase().includes('senza codice d\'ingresso valido precedente')) {
+            return "Uscita tramite pulsante (Sospetta/Non autorizzata)";
         } else if (log.status === 'success' && log.reason && log.reason.toLowerCase().includes("cycle d_accès complet")) {
-            return "Fermeture Porte (Fin du Cycle d'Accès)";
+            return "Chiusura porta (Fine del ciclo di accesso)";
         } else if (log.code_used && log.code_used.length > 0 && log.status === 'success') {
             return `Fermeture Porte (Code ${log.code_used} invalidé)`;
         }
-        return "Fermeture Porte (Général)";
+        return "Chiusura porta (Generale)";
     }
-    return log.event ? log.event.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Événement inconnu';
+    return log.event ? log.event.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Evento sconosciuto';
 }
 
 function getEnhancedLogIconClass(log, enhancedDescription) {
-    if (enhancedDescription.includes("Entrée Agent Autorisée")) return 'bi bi-door-open success'; // Votre icône préférée
-    if (enhancedDescription.includes("Tentative d'Entrée")) return 'bi bi-shield-lock danger';
-    if (enhancedDescription.includes("Sortie Agent Autorisée")) return 'bi bi-door-open primary'; // Votre icône préférée, couleur neutre
-    if (enhancedDescription.includes("Sortie via Bouton (Suspecte/Non Autorisée)")) return 'bi bi-exclamation-diamond-fill warning';
-    if (enhancedDescription.includes("Fermeture Porte (Fin du Cycle d'Accès)")) return 'bi bi-door-closed text-muted'; // Votre icône préférée, discrète
-    if (enhancedDescription.includes("Fermeture Porte (Code")) return 'bi bi-door-closed text-muted';
+    if (enhancedDescription.includes("Ingresso agente autorizzato")) return 'bi bi-door-open success'; // Votre icône préférée
+    if (enhancedDescription.includes("Tentativo di ingresso")) return 'bi bi-shield-lock danger';
+    if (enhancedDescription.includes("Uscita agente autorizzata")) return 'bi bi-door-open primary'; // Votre icône préférée, couleur neutre
+    if (enhancedDescription.includes("Uscita tramite pulsante (Sospetta/Non autorizzata)")) return 'bi bi-exclamation-diamond-fill warning';
+    if (enhancedDescription.includes("Chiusura porta (Fine del ciclo di accesso)")) return 'bi bi-door-closed text-muted'; // Votre icône préférée, discrète
+    if (enhancedDescription.includes("Chiusura porta (Codice")) return 'bi bi-door-closed text-muted';
     if (log.event === "door_close") return 'bi bi-door-closed primary';
     return 'bi bi-activity warning';
 }
@@ -380,7 +380,7 @@ function updateLogsUI(data, currentPageLogs, currentPageAlerts) {
     logsContainer.innerHTML = '';
 
     if (!data.logs || data.logs.length === 0) {
-        logsContainer.innerHTML = `<div class="empty-state"><i class="bi bi-journal-x"></i><p>Aucun événement d'accès enregistré</p></div>`;
+        logsContainer.innerHTML = `<div class="empty-state"><i class="bi bi-journal-x"></i><p>Nessun evento di accesso registrato</p></div>`;
         if (paginationContainer) paginationContainer.innerHTML = '';
         return;
     }
@@ -403,9 +403,9 @@ function updateLogsUI(data, currentPageLogs, currentPageAlerts) {
                         <span class="log-time">${formatDateTime(log.timestamp)}</span>
                     </div>
                     <div class="log-secondary">
-                        <span class="log-agent" title="Agent/Source"><i class="bi bi-person-fill"></i> ${sanitizeHTML(log.agent || 'Inconnu')}</span>
+                        <span class="log-agent" title="Agent/Source"><i class="bi bi-person-fill"></i> ${sanitizeHTML(log.agent || 'Sconosciuto')}</span>
                         <span class="log-code" title="Code utilisé"><i class="bi bi-hash"></i> ${sanitizeHTML(accessCodeDisplay)}</span>
-                         <span class="log-ip" title="Adresse IP"><i class="bi bi-pc-display"></i> ${sanitizeHTML(log.ip_address || 'N/A')}</span>
+                         <span class="log-ip" title="Adresse IP"><i class="bi bi-pc-display"></i> ${sanitizeHTML(log.ip_address || 'N/D')}</span>
                     </div>
                     ${log.reason && log.reason !== "null" && log.reason.trim() !== "" ? `
                         <div class="log-reason" title="Raison/Détail">
@@ -437,7 +437,7 @@ function updateAlertsUI(data, currentPageAlerts, currentPageLogs) {
     }
 
     if (!data.alerts || data.alerts.length === 0) {
-        alertsContainer.innerHTML = `<div class="empty-state"><i class="bi bi-shield-check-fill"></i><p>Aucune alerte active</p></div>`;
+        alertsContainer.innerHTML = `<div class="empty-state"><i class="bi bi-shield-check-fill"></i><p>Nessun allarme attivo</p></div>`;
         if (paginationContainer) paginationContainer.innerHTML = '';
         return;
     }
@@ -455,7 +455,7 @@ function updateAlertsUI(data, currentPageAlerts, currentPageLogs) {
                     <div class="alert-footer">
                         <span class="alert-time">${formatDateTime(alert.timestamp)}</span>
                         <button class="btn btn-sm btn-resolve resolve-btn" data-alert-index="${alert._index}">
-                            <i class="bi bi-check-circle-fill"></i> Résoudre
+                            <i class="bi bi-check-circle-fill"></i> Risolvi
                         </button>
                     </div>
                 </div>
@@ -552,7 +552,7 @@ function loadLogs(page, alertsPageValue) {
         .then(data => updateLogsUI(data, page, alertsPageValue))
         .catch(error => {
             console.error('Erreur chargement logs:', error);
-            if(DOM.logEntriesContainer) DOM.logEntriesContainer.innerHTML = `<div class="empty-state text-danger"><i class="bi bi-wifi-off"></i><p>Erreur chargement logs.</p></div>`;
+            if(DOM.logEntriesContainer) DOM.logEntriesContainer.innerHTML = `<div class="empty-state text-danger"><i class="bi bi-wifi-off"></i><p>Errore nel caricamento dei log.</p></div>`;
             if(DOM.logPaginationContainer) DOM.logPaginationContainer.innerHTML = '';
         });
 }
@@ -563,7 +563,7 @@ function loadAlerts(page, logsPageValue) {
         .then(data => updateAlertsUI(data, page, logsPageValue))
         .catch(error => {
             console.error('Erreur chargement alertes:', error);
-            if(DOM.alertEntriesContainer) DOM.alertEntriesContainer.innerHTML = `<div class="empty-state text-danger"><i class="bi bi-wifi-off"></i><p>Erreur chargement alertes.</p></div>`;
+            if(DOM.alertEntriesContainer) DOM.alertEntriesContainer.innerHTML = `<div class="empty-state text-danger"><i class="bi bi-wifi-off"></i><p>Errore nel caricamento degli allarmi.</p></div>`;
             if(DOM.alertPaginationContainer) DOM.alertPaginationContainer.innerHTML = '';
         });
 }
@@ -588,7 +588,7 @@ async function handleAlertResolve(button) {
             signal: AbortSignal.timeout(CONFIG.apiTimeout)
         });
         if (!response.ok) throw await handleApiError(response);
-        showNotification(`Alerte marquée comme résolue.`, 'success');
+        showNotification(`Allarme contrassegnato come risolto.`, 'success');
         alertItem.style.transition = 'opacity 0.3s ease, transform 0.3s ease, max-height 0.3s ease .1s, padding 0.3s ease .1s, margin 0.3s ease .1s, border 0.3s ease .1s';
         alertItem.style.opacity = '0'; alertItem.style.transform = 'translateX(20px)';
         alertItem.style.maxHeight = '0px'; alertItem.style.paddingTop = '0'; alertItem.style.paddingBottom = '0';
@@ -696,8 +696,8 @@ function resetGenerateButton(isError = false) {
      if (!DOM.generateBtn) return;
     DOM.generateBtn.disabled = false;
     DOM.generateBtn.innerHTML = isError
-        ? '<i class="bi bi-exclamation-triangle-fill me-1"></i> Réessayer'
-        : '<i class="bi bi-plus-circle-fill"></i> Générer un Nouveau Code'; // Icône remplie
+        ? '<i class="bi bi-exclamation-triangle-fill me-1"></i> Riprova'
+        : '<i class="bi bi-plus-circle-fill"></i> Genera un Nuovo Codice'; // Icône remplie
 }
 function formatDateTime(timestamp) {
     if (!timestamp) return 'N/A';

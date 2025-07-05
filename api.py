@@ -89,8 +89,8 @@ def load_data() -> Dict[str, Any]:
         try:
             with open(backup_file, 'w', encoding='utf-8') as file_backup:
                 json.dump(current_data_content if current_data_content else {"error_loading": True}, file_backup, indent=2, ensure_ascii=False)
-            logger.info(f"Sauvegarde créée: {backup_file}")
-        except Exception as backup_error: logger.error(f"Erreur sauvegarde: {str(backup_error)}")
+            logger.info(f"Salvataggio creato: {backup_file}")
+        except Exception as backup_error: logger.error(f"Errore salvataggio: {str(backup_error)}")
         default_data_on_error = get_default_data()
         with open(DATA_FILE, 'w', encoding='utf-8') as file_reset:
             json.dump(default_data_on_error, file_reset, indent=2, ensure_ascii=False)
@@ -230,7 +230,7 @@ class CodeResource(Resource):
             data["current_code"] = {"value": new_code, "generated_at": generated_at.isoformat(),
                                    "valid_until": valid_until.isoformat(), "used": False, "used_for_entry": False}
             if not save_data(data): return {"error": "Erreur sauvegarde"}, 500
-            logger.info(f"API: Nouveau code généré: {new_code}")
+            logger.info(f"API: Nuovo codice generato: {new_code}")
             return {"code": new_code, "generated_at": generated_at.isoformat(), "valid_until": valid_until.isoformat()}, 201
         except Exception as e: logger.error(f"Erreur POST CodeResource: {str(e)}"); return {"error": "Erreur serveur"}, 500
 
@@ -302,7 +302,7 @@ class AccessResource(Resource):
                 return {"error": "Erreur de sauvegarde interne"}, 500
 
             logger.info(
-                f"API Access: Événement '{event}' traité pour code '{code}'. Statut: {log_entry['status']}, Raison: {log_entry.get('reason')}")
+                f"Accesso API: Evento '{event}' elaborato per codice '{code}'. Stato: {log_entry['status']}, Motivo: {log_entry.get('reason')}")
             return {"status": "logged", "event_status": log_entry["status"], "reason": log_entry.get("reason")}, 201
         except Exception as e:
             logger.error(f"Erreur POST AccessResource: {str(e)}"); return {"error": "Erreur serveur"}, 500
